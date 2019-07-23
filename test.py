@@ -1,31 +1,65 @@
-from importlib import reload
-
-import numpy as np
 import torch
+
 from torch import nn
-import diff_connect as dc
+from torch.nn import functional, Parameter
+
+from data import mnist_generator, cifar_generator
+
+from xox import XOXHyperNetwork, XOXLinear
 
 
-mnist = dc.mnist_data()
-mnist_test = dc.mnist_data(is_train=False)
+acc_gen = mnist_generator(5, is_train=False)
+def test_accuracy(net):
+    total = correct_total = 0
+    for img, label in acc_gen:
+        img = torch.flatten(img, start_dim=1)
+        label_prime = net(img).argmax(1)
+        correct = sum(label == label_prime).item()
+        correct_total += correct
+        total += img.shape[0]
+        if total > 1000: break
+    return correct_total / total
 
-train_args = {
-    'regression':False, 'data': mnist_test,
-    'epochs': 5, 'sample_every':50, 'optimizer':'SGD',
-    'print_loss': True, 'lr': 0.0001
-}
 
-x = np.random.randn(1, 28, 28)
+hyper = XOXHyperNetwork(10)
 
-mlp_net = nn.Sequential(dc.flatten(), nn.Linear(28 ** 2, 100), nn.ReLU(), nn.Linear(100, 10))
+big = nn.Sequential(
+    nn.Linear(28*28, 50),
+    nn.ReLU(),
+    nn.Linear(50, 10)
+)
 
-reload(dc.linear_dc);
-reload(dc);
+layer = XOXLinear(28*28, 50, hyper=hyper)
+big_xox = nn.Sequential(
+    layer,
+    nn.ReLU(),
+    XOXLinear(50, 10, prev=layer)
+)
 
-dc_net = nn.Sequential(dc.flatten(), dc.LinearDC(28 ** 2, 10, 11, 5))
-dc_net(dc.toT(x))
+small = nn.Linear(28*28, 10)
+small_xox = XOXLinear(28*28, 10, hyper=hyper)
 
-result = dc.train_net(dc_net, **train_args)
+net = big_xox
 
-plt.title("loss curves")
-plt.ylim(0.07, 2)
+params = list(net.parameters())
+
+num_params = sum(p.numel() for p in params)
+
+print(f"Number of parameters = {num_params}")
+
+opt = torch.optim.Adam(params, lr=0.01)
+time = 0
+for img, label in mnist_generator(64):
+    time += 1
+    opt.zero_grad()
+    img = torch.flatten(img, start_dim=1)
+    label_prime = net(img)
+    loss = functional.cross_entropy(label_prime, label)
+    loss.backward()
+    opt.step()
+    if time % 500 == 0:
+        if time % 1000 == 0:
+            acc = test_accuracy(net)
+            print(f"{time:>5d}\t{loss:.3f}\t{acc:.3f}")
+        else:
+            print(f"{time:>5d}\t{loss:.3f}")
