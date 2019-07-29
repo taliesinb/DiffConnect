@@ -105,3 +105,10 @@ venv.bak/
 
 # data
 data/
+
+# pycharm
+.idea/
+
+# temp data
+runs/
+data/

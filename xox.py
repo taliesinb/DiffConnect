@@ -1,109 +1,140 @@
 import torch
 
-from torch import nn
-from torch.nn import functional, Parameter
+import torch.autograd
+
+from torch.nn import Parameter, Module, Sequential, Linear, ReLU
+from torch.nn.functional import mse_loss
+from collections import OrderedDict
+
 import numpy as np
 
 
-def yox(y, o, x):
-    return torch.matmul(y, torch.matmul(o, torch.t(x)))
+def print_grad_magnitudes(model):
+    print("\ngradient magnitudes:")
+    for name, p in model.named_parameters():
+        mag = p.grad.norm() if p.grad is not None else 0
+
+        print(f"\t{name:15s}\t{mag:.4f}")
 
 
-def bx(b, x):
-    return torch.matmul(b, torch.t(x))
+def model_param_count(model):
+    return sum(p.numel() for p in model.parameters())
 
 
-def make_ob(num_genes):
-    o = torch.nn.Parameter(torch.randn(num_genes, num_genes))
-    b = torch.nn.Parameter(torch.randn(num_genes))
-    return o, b
+def fix_name(name):
+    return name.replace('.', '_')
 
 
-class XOXHyperNetwork(nn.Module):
-    def __init__(self, num_genes, sharing=False, freeze=False):
+class HyperNetwork(Module):
+
+    def __init__(self, target_net):
         super().__init__()
-        self.num_genes = num_genes
-        self.sharing = False
-        self.o_matrix = torch.randn(num_genes, num_genes)
-        self.b_matrix = torch.randn(num_genes)
-        self.prev = None
-        self.sharing = sharing
-        if not freeze:
-            self.o_matrix = torch.nn.Parameter(self.o_matrix)
-            self.b_matrix = torch.nn.Parameter(self.b_matrix)
+        self.last_hyper_tensor = None
+        target_params = OrderedDict(target_net.named_parameters())
+        self.param_names = [fix_name(name) for name in target_params.keys()]
+        self.lambdas = [self.make_hyper_lambda(fix_name(name), param) for name, param in target_params.items()]
+        self.outpuxts = None
+        self.__dict__['target_params'] = list(target_params.values())
+        print(f"Hypernetwork: {model_param_count(target_net)} -> {model_param_count(self)}")
+        # ^ use of __dict__ stops us from owning the params
 
-    def set_prev(self, prev):
-        if self.sharing:
-            self.prev = prev
+    def forward(self, set_arrays=True):
+        self.outputs = [fn() for fn in self.lambdas]
+        if set_arrays:
+            with torch.no_grad():
+                return [dst.copy_(src) for src, dst in zip(self.outputs, self.target_params)]
+        return self.outputs
 
-    def linear(self, num_inputs, num_outputs):
-        layer = XOXLinear(num_inputs, num_outputs, hyper=self, prev=self.prev)
-        self.set_prev(layer)
-        return layer
+    def backward(self):
+        grad_tensors = [p.grad for p in self.target_params]
+        torch.autograd.backward(self.outputs, grad_tensors)
 
-    def linear_2d(self, num_inputs, num_outputs, spatial_x=True, spatial_y=True):
-        layer = XOXLinear2D(num_inputs, num_outputs, spatial_x=spatial_x, spatial_y=spatial_y, hyper=self, prev=self.prev)
-        self.set_prev(layer)
-        return layer
+    def discrepancy_loss(self):
+        loss = sum(mse_loss(src, dst.detach(), reduction='sum')
+                   for src, dst in zip(self.outputs, self.target_params))
+        return loss
 
-    def make_gene_matrix(self, num_units):
-        return Parameter(torch.randn(num_units, self.num_genes))
+    def make_hyper_lambda(self, name, param):
+        raise NotImplementedError()
 
+    def make_hyper_tensor(self, name, shape, var=1.0, set_last=True):
+        param = Parameter(torch.randn(shape) * np.sqrt(var))
+        param_name = 'hyper_' + name
+        self.register_parameter(param_name, param)
+        if set_last: self.last_hyper_tensor = param_name
+        return param
 
-'''
-            if rt * rt == num_units:
-                rt = np.round(np.sqrt(num_units))
-                pattern = [(i / rt, j / rt) for i in range(-rt+1, rt, 2) for j in range(-rt+1, rt)]
-                matrix[:, 0] = pattern[:, 0]
-                matrix[:, 1] = pattern[:, 1]
-'''
-
-
-class XOXLinear(nn.Module):
-    def __init__(self, num_inputs, num_outputs, *, hyper=None, prev=None):
-        super().__init__()
-        if prev:
-            self.hyper = prev.hyper
-            self.x_genes = prev.y_genes
-            self.y_genes = prev.hyper.make_gene_matrix(num_outputs)
-        else:
-            assert hyper
-            self.hyper = hyper
-            self.x_genes = hyper.make_gene_matrix(num_inputs)
-            self.y_genes = hyper.make_gene_matrix(num_outputs)
-
-    def forward(self, x):
-        weight = yox(self.y_genes, self.hyper.o_matrix, self.x_genes)
-        bias = bx(self.hyper.b_matrix, self.y_genes)
-        return functional.linear(x, weight, bias)
+    def get_last_hyper_tensor(self):
+        return self._parameters[self.last_hyper_tensor]
 
 
-def make_2d_pattern(n):
-    rng = np.arange(-1, 1 + 1e-5, 2/(n-1))
-    return torch.tensor([[i, j] for i in rng for j in rng])
 
+class DummyHyperNetwork(HyperNetwork):
 
-def make_1d_pattern(n):
-    return torch.arange(-1, 1 + 1e-5, 2/(n-1))
+    def make_hyper_lambda(self, name, param):
+        param = self.make_hyper_tensor(name, param.shape)
+        return lambda: param
 
-
-def int_sqrt(n):
-    sqrt = np.sqrt(n)
-    sqrt_r = round(sqrt)
-    assert sqrt == sqrt_r, f"cannot make a spatial substrate for non-square number of neurons {n}"
-    return sqrt_r
-
-
-class XOXLinear2D(XOXLinear):
-    def __init__(self, num_inputs, num_outputs, *, spatial_x=True, spatial_y=True, hyper=None, prev=None):
-        super().__init__(num_inputs, num_outputs, hyper=hyper, prev=prev)
-        self.x_mask = make_2d_pattern(int_sqrt(num_inputs)) if spatial_x else None
-        self.y_mask = make_2d_pattern(int_sqrt(num_outputs)) if spatial_y else None
-
-    def forward(self, x):
+    def absorb(self, step_size=0.1):
         with torch.no_grad():
-            if self.x_mask is not None:
-                self.x_genes[:, :2] = self.x_mask
-            if self.y_mask is not None:
-                self.y_genes[:, :2] = self.y_mask
-        return super().forward(x)
+            for dst, name in zip(self.target_params, self.param_names):
+                src = self._parameters['hyper_' + name]
+                src.copy_(src * (1-step_size) + dst * step_size)
+
+
+class XOXHyperNetwork(HyperNetwork):
+
+    def __init__(self, target_net, num_genes=8, skip_small=True, skip_vectors=True, symmetric=True, learn_ob=False):
+        self.num_genes = num_genes
+        self.skip_small = skip_small
+        self.skip_vectors = skip_vectors
+        self.symmetric = symmetric
+        super().__init__(target_net)
+        self.o_matrix = torch.randn(num_genes, num_genes) * (1 / num_genes)
+        self.b_matrix = torch.randn(num_genes) * np.sqrt(1 / num_genes)
+        if learn_ob:
+            self.o_matrix = Parameter(self.o_matrix)
+            self.b_matrix = Parameter(self.b_matrix)
+
+    def should_share_x(self, name, num_x):
+        return (
+            self.symmetric and
+            self.last_hyper_tensor and
+            self.last_hyper_tensor.endswith(('_weight_y', '_bias_y')) and
+            name.endswith('_weight') and
+            self.get_last_hyper_tensor().shape[0] == num_x
+        )
+
+    def should_share_y(self, name):
+        return (
+            not self.skip_vectors and
+            self.last_hyper_tensor == 'hyper_' + name.replace('bias', 'weight') + '_y'
+        )
+
+    def make_hyper_lambda(self, name, param):
+        shape = param.shape
+        size = np.prod(shape)
+        is_small = size <= sum(shape) * self.num_genes
+        # if it is a matrix
+        if len(shape) == 2 and not (self.skip_small and is_small):
+            num_y, num_x = shape
+            var = 1 / np.sqrt(3 * num_x)
+            if self.should_share_x(name, num_x):
+                x_genes = self.get_last_hyper_tensor()
+            else:
+                x_genes = self.make_hyper_tensor(name + '_x', (num_x, self.num_genes), var=var)
+            y_genes = self.make_hyper_tensor(name + '_y', (num_y, self.num_genes), var=var)
+            return lambda: self.yox(y_genes, x_genes)
+        # if it is a vector
+        if len(shape) == 1 and self.should_share_y(name):
+            y_genes = self.get_last_hyper_tensor()
+            return lambda: self.bx(y_genes)
+        # just model the parameter directly
+        param = self.make_hyper_tensor(name, param.shape, set_last=False, var=(param.var().item()))
+        return lambda: param
+
+    def yox(self, y, x):
+        return torch.matmul(y, torch.matmul(self.o_matrix, torch.t(x)))
+
+    def bx(self, x):
+        return torch.matmul(self.b_matrix, torch.t(x))

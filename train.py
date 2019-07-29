@@ -1,25 +1,33 @@
 import torch
 
-from torch.nn import functional, Parameter
+from torch.nn import functional, Module
 
+import numpy as np
 import tensorboardX
+import torchvision
 
 
 run_count = 0
 
 
-def train(net, generator_factory, max_batches, *, lr=0.01, title=None, batch_size=64, log_weights=False):
+def train(net, generator_factory, max_batches, *,
+          lr=0.01, log_dir='runs', title=None, batch_size=64, hyper_net=None, params=None):
     global run_count
-    params = list(net.parameters())
-    num_params = sum(p.numel() for p in params)
-    print("Param sizes:")
-    for p in params:
-        print(p.shape)
-    print(f"Number of parameters = {num_params}")
-    if title is None:
-        run_count += 1
-        title = f"{run_count:03d}"
-    writer = tensorboardX.SummaryWriter(f"runs/{title:s}", flush_secs=2)
+    if params is None:
+        if hyper_net:
+            params = hyper_net.parameters()
+        else:
+            params = net.parameters()
+    params = list(params)
+    print(f"Training {len(params)} params:")
+    print([tuple(p.shape) for p in params])
+    if log_dir:
+        if title is None:
+            run_count += 1
+            title = f"{run_count:03d}"
+        writer = tensorboardX.SummaryWriter(log_dir + '/' + str(title), flush_secs=2)
+    else:
+        writer = None
     opt = torch.optim.Adam(params, lr=lr)
     time = 0
     accuracy_generator = generator_factory(batch_size, is_training=True)
@@ -29,9 +37,15 @@ def train(net, generator_factory, max_batches, *, lr=0.01, title=None, batch_siz
         time += 1
         opt.zero_grad()
         img = torch.flatten(img, start_dim=1)
+        if hyper_net:
+            net.zero_grad()
+            hyper_net.zero_grad()
+            hyper_net.forward()
         label_prime = net(img)
         loss = functional.cross_entropy(label_prime, label)
         loss.backward()
+        if hyper_net:
+            hyper_net.backward()
         opt.step()
         loss = loss.item()
         if running_loss is None:
@@ -40,25 +54,19 @@ def train(net, generator_factory, max_batches, *, lr=0.01, title=None, batch_siz
             running_loss = 0.95 * running_loss + 0.05 * loss
         if time % 10 == 0:
             writer.add_scalar("loss", running_loss, time)
-        if log_weights and (time == 1 or time % 2000 == 0):
-            writer.add_histogram("o_matrix", net[0].hyper.o_matrix.flatten(start_dim=0), time)
-            writer.add_histogram("b_matrix", net[0].hyper.b_matrix.flatten(start_dim=0), time)
-            writer.add_histogram("0/x_genes", net[0].x_genes, time)
-            writer.add_histogram("0/y_genes", net[0].y_genes, time)
-            writer.add_histogram("2/x_genes", net[2].x_genes, time)
-            writer.add_histogram("2/y_genes", net[2].y_genes, time)
         if time % 500 == 0:
             if time % 2500 == 0:
                 acc = test_accuracy(net, accuracy_generator)
-                writer.add_scalar("accuracy", acc, time)
+                if writer: writer.add_scalar("accuracy", acc, time)
                 print(f"{time:>5d}\t{loss:.3f}\t{acc:.3f}")
             else:
                 print(f"{time:>5d}\t{loss:.3f}")
         if time > max_batches:
             break
     acc = test_accuracy(net, accuracy_generator, max_batches=10000)
-    writer.add_scalar("accuracy", acc, time)
-    writer.close()
+    if writer:
+        writer.add_scalar("accuracy", acc, time)
+        writer.close()
     print(f"final accuracy = {acc:.3f}")
     return {'loss': running_loss, 'accuracy': acc}
 
@@ -74,3 +82,62 @@ def test_accuracy(net, generator, max_batches=5000):
         if total > max_batches:
             break
     return correct_total / total
+
+
+'''
+def visualize_weights(layer, n_colors=1):
+    with torch.no_grad():
+        if isinstance(layer, torch.nn.Linear):
+            weight = layer.weight
+        else:
+            weight, _ = layer.calculate_weight()
+            # ^ for XOXLinear and friends
+        output_size, input_size = weight.shape
+        input_height = input_width = int(np.sqrt(input_size))
+        size = (output_size, n_colors, input_height, input_width)
+        weight_reshaped = weight.reshape(size).clone()
+        img = batched_to_flat_image(weight_reshaped)
+        return img
+
+'''
+def batched_to_flat_image(t):
+    shape = t.shape
+    n = shape[0]
+    rank = len(shape)
+
+    red_blue = True
+    if rank == 2:
+        w = shape[1]
+        if w > 8:
+            h = np.ceil(np.sqrt(w))
+            w = w // h
+        else:
+            h = w
+            w = 1
+        shape = [n, 1, h, w]
+    elif rank == 3:
+        shape = [n, 1, shape[1], shape[2]]
+    elif rank == 4:
+        shape = list(shape)
+        if shape[1] > 1:
+            red_blue = False
+    t = t.view(*shape)
+
+    t_min = t.min()
+    t_max = t.max()
+    if red_blue and t_min < 0 < t_max:
+        #sorted, _ = t.flatten().sort()
+        #n = sorted.numel()
+        #t_min = sorted[int(n / 5)]
+        #t_max = sorted[int(n * 4 / 5)]
+        scale = max(-t_min, t_max)
+        # for positive, shift the         green and blue down
+        # for negative, shift the red and green          down
+        scaled = t / scale
+        r = 1 + torch.clamp(scaled, -1, 0)
+        g = 1 - abs(scaled)
+        b = 1 - torch.clamp(scaled, 0, 1)
+        t = torch.cat([r, g, b], dim=1)
+
+    grid = torchvision.utils.make_grid(t, 10, normalize=(not red_blue), padding=1)
+    return grid

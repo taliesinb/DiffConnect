@@ -2,25 +2,22 @@ import torch
 
 from torch import nn
 from data import mnist_generator, cifar_generator
-from xox import XOXHyperNetwork, XOXLinear
-
+from xox import XOXHyperNetwork, HyperNetwork
+from utils import reset_parameters
 from train import train
 
-hyper = XOXHyperNetwork(10, sharing=True)
 net = nn.Sequential(
-    hyper.linear(28*28, 64),
+    nn.Linear(28*28, 64),
     nn.ReLU(),
-    hyper.linear(64, 10)
+    nn.Linear(64, 10)
 )
 
-train(net, mnist_generator, 5000, title='ordinary')
+train(net, mnist_generator, 2000, title='ordinary')
+# should achieve around 95% final accuracy
 
-hyper = XOXHyperNetwork(10, sharing=True)
-net_2d = nn.Sequential(
-    hyper.linear_2d(28*28, 64),
-    nn.ReLU(),
-    hyper.linear(64, 10)
-)
+reset_parameters(net)
 
+hyper = XOXHyperNetwork(net, num_genes=9)
 
-train(net_2d, mnist_generator, 5000, title='2d')
+train(net, mnist_generator, 2000, title='hyper', hyper_net=hyper)
+# should achieve around 90% final accuracy
