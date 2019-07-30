@@ -106,8 +106,14 @@ venv.bak/
 # data
 data/
 
+# cached decorator files
+cache/
+
 # pycharm
 .idea/
+
+# macos
+**/.DS_Store
 
 # temp data
 runs/
