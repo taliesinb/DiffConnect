@@ -6,6 +6,7 @@ import numpy as np
 def reset_parameters(model):
     model.apply(_reset_parameters)
 
+
 def _reset_parameters(layer):
     if isinstance(layer, (torch.nn.Conv2d, torch.nn.Linear)):
         layer.reset_parameters()
@@ -22,6 +23,10 @@ def tostr(x):
 
 def print_row(*args):
     print(' '.join(tostr(arg).rjust(12, ' ') for arg in args))
+
+
+def count_parameters(model):
+    return sum(np.prod(p.shape) for p in model.parameters())
 
 
 def summarize_parameters(model):
