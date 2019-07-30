@@ -19,8 +19,10 @@ def train(net, generator_factory, max_batches, *,
         else:
             params = net.parameters()
     params = list(params)
-    print(f"Training {len(params)} params:")
-    print([tuple(p.shape) for p in params])
+    weight_shapes = [tuple(p.shape) for p in params]
+    weight_params = sum(np.prod(shape) for shape in weight_shapes)
+    print(f"Training {len(params)} weights with total {weight_params} parameters:")
+    print(weight_shapes)
     if log_dir:
         if title is None:
             run_count += 1
@@ -33,6 +35,8 @@ def train(net, generator_factory, max_batches, *,
     accuracy_generator = generator_factory(batch_size, is_training=True)
     training_generator = generator_factory(batch_size, is_training=False)
     running_loss = None
+    loss_history = []
+    acc_history = []
     for img, label in training_generator:
         time += 1
         opt.zero_grad()
@@ -48,19 +52,21 @@ def train(net, generator_factory, max_batches, *,
             hyper_net.backward()
         opt.step()
         loss = loss.item()
+        loss_history.append(loss)
         if running_loss is None:
             running_loss = loss
         else:
             running_loss = 0.95 * running_loss + 0.05 * loss
-        if time % 10 == 0:
+        if time % 10 == 0 and writer:
             writer.add_scalar("loss", running_loss, time)
         if time % 500 == 0:
             if time % 2500 == 0:
                 acc = test_accuracy(net, accuracy_generator)
+                acc_history.append((time, acc))
                 if writer: writer.add_scalar("accuracy", acc, time)
-                print(f"{time:>5d}\t{loss:.3f}\t{acc:.3f}")
+                print(f"{time:>5d}\t{running_loss:.3f}\t{acc:.3f}")
             else:
-                print(f"{time:>5d}\t{loss:.3f}")
+                print(f"{time:>5d}\t{running_loss:.3f}")
         if time > max_batches:
             break
     acc = test_accuracy(net, accuracy_generator, max_batches=10000)
@@ -68,7 +74,10 @@ def train(net, generator_factory, max_batches, *,
         writer.add_scalar("accuracy", acc, time)
         writer.close()
     print(f"final accuracy = {acc:.3f}")
-    return {'loss': running_loss, 'accuracy': acc}
+    history = {'loss': loss_history, 'accuracy': acc_history}
+    return {'loss': running_loss, 'accuracy': acc, 'history': history,
+            'weight_shapes': weight_shapes, 'weight_params': weight_params,
+            'batch_size': batch_size, 'batches': max_batches}
 
 
 def test_accuracy(net, generator, max_batches=5000):
