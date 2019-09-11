@@ -5,20 +5,9 @@ import torch.autograd
 from torch.nn import Parameter, Module, Sequential, Linear, ReLU
 from torch.nn.functional import mse_loss
 from collections import OrderedDict
+from utils import count_parameters
 
 import numpy as np
-
-
-def print_grad_magnitudes(model):
-    print("\ngradient magnitudes:")
-    for name, p in model.named_parameters():
-        mag = p.grad.norm() if p.grad is not None else 0
-
-        print(f"\t{name:15s}\t{mag:.4f}")
-
-
-def model_param_count(model):
-    return sum(p.numel() for p in model.parameters())
 
 
 def fix_name(name):
@@ -33,9 +22,9 @@ class HyperNetwork(Module):
         target_params = OrderedDict(target_net.named_parameters())
         self.param_names = [fix_name(name) for name in target_params.keys()]
         self.lambdas = [self.make_hyper_lambda(fix_name(name), param) for name, param in target_params.items()]
-        self.outpuxts = None
+        self.outputs = None
         self.__dict__['target_params'] = list(target_params.values())
-        print(f"Hypernetwork: {model_param_count(target_net)} -> {model_param_count(self)}")
+        print(f"Hypernetwork: {count_parameters(target_net)} -> {count_parameters(self)}")
         # ^ use of __dict__ stops us from owning the params
 
     def forward(self, set_arrays=True):
@@ -57,16 +46,17 @@ class HyperNetwork(Module):
     def make_hyper_lambda(self, name, param):
         raise NotImplementedError()
 
-    def make_hyper_tensor(self, name, shape, var=1.0, set_last=True):
-        param = Parameter(torch.randn(shape) * np.sqrt(var))
+    def make_hyper_tensor(self, name, shape, var=1.0, set_last=True, fix=False):
+        param = torch.randn(shape) * np.sqrt(var)
         param_name = 'hyper_' + name
-        self.register_parameter(param_name, param)
         if set_last: self.last_hyper_tensor = param_name
+        if not fix:
+            param = Parameter(param)
+            self.register_parameter(param_name, param)
         return param
 
     def get_last_hyper_tensor(self):
         return self._parameters[self.last_hyper_tensor]
-
 
 
 class DummyHyperNetwork(HyperNetwork):
@@ -82,17 +72,32 @@ class DummyHyperNetwork(HyperNetwork):
                 src.copy_(src * (1-step_size) + dst * step_size)
 
 
+class HaHypernetwork(HyperNetwork):
+
+    def make_hyper_lambda(self, name, param):
+        param = self.make_hyper_tensor(name, param.shape)
+        return lambda: param
+
+    def absorb(self, step_size=0.1):
+        with torch.no_grad():
+            for dst, name in zip(self.target_params, self.param_names):
+                src = self._parameters['hyper_' + name]
+                src.copy_(src * (1-step_size) + dst * step_size)
+
+
 class XOXHyperNetwork(HyperNetwork):
 
-    def __init__(self, target_net, num_genes=8, skip_small=True, skip_vectors=True, symmetric=True, learn_ob=False):
+    def __init__(self, target_net, num_genes=8, skip_small=True, skip_vectors=True, symmetric=True, fix_o_matrix=False,
+                 fix_gene_matrices=False):
         self.num_genes = num_genes
         self.skip_small = skip_small
         self.skip_vectors = skip_vectors
         self.symmetric = symmetric
+        self.fix_gene_matrices = fix_gene_matrices
         super().__init__(target_net)
         self.o_matrix = torch.randn(num_genes, num_genes) * (1 / num_genes)
         self.b_matrix = torch.randn(num_genes) * np.sqrt(1 / num_genes)
-        if learn_ob:
+        if not fix_o_matrix:
             self.o_matrix = Parameter(self.o_matrix)
             self.b_matrix = Parameter(self.b_matrix)
 
@@ -122,7 +127,7 @@ class XOXHyperNetwork(HyperNetwork):
             if self.should_share_x(name, num_x):
                 x_genes = self.get_last_hyper_tensor()
             else:
-                x_genes = self.make_hyper_tensor(name + '_x', (num_x, self.num_genes), var=var)
+                x_genes = self.make_hyper_tensor(name + '_x', (num_x, self.num_genes), var=var, fix=self.fix_gene_matrices)
             y_genes = self.make_hyper_tensor(name + '_y', (num_y, self.num_genes), var=var)
             return lambda: self.yox(y_genes, x_genes)
         # if it is a vector
