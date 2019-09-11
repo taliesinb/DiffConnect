@@ -11,13 +11,17 @@ run_count = 0
 
 
 def train(net, generator_factory, max_batches, *,
-          lr=0.01, log_dir='runs', title=None, batch_size=64, hyper_net=None, params=None):
+          lr=0.01, log_dir='runs', title=None, batch_size=64, hyper_net=None, params=None, flatten=True):
     global run_count
+
     if params is None:
+        # if a hypernetwork was provided, we don't directly train via the network parameters,
+        # we train via the hypernetwork parameters (which produce the network parameters)
         if hyper_net:
             params = hyper_net.parameters()
         else:
             params = net.parameters()
+
     params = list(params)
     weight_shapes = [tuple(p.shape) for p in params]
     weight_params = sum(np.prod(shape) for shape in weight_shapes)
@@ -37,20 +41,45 @@ def train(net, generator_factory, max_batches, *,
     running_loss = None
     loss_history = []
     acc_history = []
+
+    # main training loop
     for img, label in training_generator:
         time += 1
         opt.zero_grad()
-        img = torch.flatten(img, start_dim=1)
+        if flatten:
+            img = torch.flatten(img, start_dim=1)
+
+        # if we have a hyper network, we should use its .forward method to
+        # derive the parameters for our network
         if hyper_net:
             net.zero_grad()
             hyper_net.zero_grad()
             hyper_net.forward()
-        label_prime = net(img)
+
+        # apply the net to the input batch
+        res = net(img)
+        if not isinstance(res, tuple):
+            res = res, 0
+
+        # the second returned value should be additional losses (if any)
+        label_prime, extra_loss = res
+
+        # calculate the loss
         loss = functional.cross_entropy(label_prime, label)
+        loss += extra_loss
+
+        # obtain gradients of the loss
         loss.backward()
+
+        # if we have a hypernetwork, we need to propogate those gradients
+        # from the network back into the hypernetwork
         if hyper_net:
             hyper_net.backward()
+
+        # do one step of optimization
         opt.step()
+
+        # report losses, etc.
         loss = loss.item()
         loss_history.append(loss)
         if running_loss is None:
@@ -61,29 +90,40 @@ def train(net, generator_factory, max_batches, *,
             writer.add_scalar("loss", running_loss, time)
         if time % 500 == 0:
             if time % 2500 == 0:
-                acc = test_accuracy(net, accuracy_generator)
+                acc = test_accuracy(net, accuracy_generator, flatten=flatten)
                 acc_history.append((time, acc))
                 if writer: writer.add_scalar("accuracy", acc, time)
                 print(f"{time:>5d}\t{running_loss:.3f}\t{acc:.3f}")
             else:
                 print(f"{time:>5d}\t{running_loss:.3f}")
+
+        # stop training when we hit max_batches
         if time > max_batches:
             break
-    acc = test_accuracy(net, accuracy_generator, max_batches=10000)
+
+    # report final test accuracy
+    acc = test_accuracy(net, accuracy_generator, max_batches=10000, flatten=flatten)
     if writer:
         writer.add_scalar("accuracy", acc, time)
         writer.close()
     print(f"final accuracy = {acc:.3f}")
     history = {'loss': loss_history, 'accuracy': acc_history}
-    return {'loss': running_loss, 'accuracy': acc, 'history': history,
-            'weight_shapes': weight_shapes, 'weight_params': weight_params,
-            'batch_size': batch_size, 'batches': max_batches}
+
+    # return a bunch of statistics about the training run
+    return {'loss': running_loss,               # final loss
+            'accuracy': acc,                    # final test accuracy
+            'history': history,                 # dictionary containing history of losses and test accuracies over time
+            'weight_shapes': weight_shapes,     # list of shapes of trained arrays
+            'weight_params': weight_params,     # list of names of trained arrays
+            'batch_size': batch_size,           # batch size
+            'batches': max_batches}             # number of batches to train for
 
 
-def test_accuracy(net, generator, max_batches=5000):
+def test_accuracy(net, generator, max_batches=5000, flatten=True):
     total = correct_total = 0
     for img, label in generator:
-        img = torch.flatten(img, start_dim=1)
+        if flatten:
+            img = torch.flatten(img, start_dim=1)
         label_prime = net(img).argmax(1)
         correct = sum(label == label_prime).item()
         correct_total += correct
