@@ -160,7 +160,10 @@ def normalize_args(fn_name, args, kwargs, arg_names, defaults):
     result = OrderedDict()
     for key in kwargs.keys():
         if key not in arg_names:
-            raise RuntimeError(f"{fn_name}: unknown key {key} provided")
+            if key == 'global_seed':
+                result['global_seed'] = kwargs[key]
+            else:
+                raise RuntimeError(f"{fn_name}: unknown key {key} provided")
     if len(args) > len(arg_names):
         raise RuntimeError(f"{fn_name}: excess arguments provided {len(args)} > {len(arg_names)}")
     for i, name in enumerate(arg_names):
@@ -173,6 +176,13 @@ def normalize_args(fn_name, args, kwargs, arg_names, defaults):
         else:
             raise RuntimeError(f"{fn_name}: value for argument {i} ('{name}') not specified")
     return result
+
+
+def apply_global_seed(seed):
+    import numpy
+    numpy.random.seed(seed)
+    import torch
+    torch.manual_seed
 
 
 # this is the decorator that turns a function into a disk-memoizing version
@@ -199,6 +209,10 @@ def cached(fn):
             res = unpickle(output_path)
             return res['output']
         start = time.time()
+        #
+        if 'global_seed' in kwargs:
+            apply_global_seed(kwargs['global_seed'])
+            del kwargs['global_seed']
         output = fn(*args, **kwargs)
         end = time.time()
         output_dict = {'input': input_dict, 'output': output, 'timing': end - start}
@@ -225,16 +239,29 @@ if __name__ == '__main__':
 
     @cached
     def double(x):
-        sleep(0.1)
+        sleep(0.5)
         return x * 2
 
+    print("uncached")
     # this will be slow
     for i in range(10):
         double(i)
 
+    print("cached")
     # this will be fast
     for i in range(10):
         double(i)
+
+    print("uncached (global seed)")
+    # this will be slow again, (one per seed)
+    for seed in range(10):
+        double(0, global_seed=seed)
+
+    print("cached (global seed)")
+    # this will be fast again
+    for seed in range(10):
+        double(0, global_seed=seed)
+
 
     # this returns all the values
     print(list(load_cached_results(double)))
