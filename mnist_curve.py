@@ -2,7 +2,8 @@ import torch
 
 from torch import nn
 from data import mnist_generator, cifar_generator
-from xox import XOXHyperNetwork, HyperNetwork
+from xox import XOXHyperNetwork
+from hyper import RandomBasisHyperNetwork
 
 from train import train
 from cache import cached, load_cached_results_as_pandas
@@ -77,6 +78,12 @@ def train_mnist_single_layer_normal(steps=5000):
     net = nn.Linear(28*28, 10)
     return train(net, mnist_generator, steps, log_dir=None)
 
+@cached
+def train_mnist_single_layer_random_basis(ndims, steps=5000):
+    net = nn.Linear(28*28, 10)
+    hyper = RandomBasisHyperNetwork(net, ndims=ndims)
+    return train(net, mnist_generator, steps, title='random', hyper_net=hyper, log_dir=None)
+
 
 print('Loading data')
 
@@ -87,9 +94,17 @@ for i in range(1, 10):
             print(f"Run number {j}")
             train_mnist_single_layer_xox(i, global_seed=j)
 
+for i in [10, 50, 100, 200, 500]:
+    print(f"Training with {i}-dimensional subspace")
+    for j in range(5):
+        with indent:
+            print(f"Run number {j}")
+            train_mnist_single_layer_random_basis(i, global_seed=j)
+
 print('Done')
 
 results_xox = load_cached_results_as_pandas(train_mnist_single_layer_xox)
+results_random = load_cached_results_as_pandas(train_mnist_single_layer_random_basis)
 results_normal = train_mnist_single_layer_normal()
 
 print(results_xox)
@@ -105,5 +120,9 @@ ax1.axhline(y=results_normal['accuracy'], color='black', linewidth=2, alpha=.7)
 
 ax2 = plt.twinx(ax1)
 plt2 = sns.pointplot(x='num_genes', y='capacity', data=results_xox, aspect=1.4, ax=ax2, join=False, color="#bb3f3f")
+
+fig = plt.figure()
+ax1 = fig.add_subplot(111)
+sns.pointplot(x='ndims', y='accuracy', data=results_random)
 
 plt.show()
