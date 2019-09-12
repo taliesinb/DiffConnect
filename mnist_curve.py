@@ -11,6 +11,9 @@ import seaborn as sns
 # import pandas as pd
 import matplotlib.pyplot as plt
 
+from indent import *
+
+
 '''
 This file computes the relationship between number of genes in a hypernetwork
 and the resulting accuracy on MNIST (after a fixed number of SGD steps).
@@ -78,10 +81,11 @@ def train_mnist_single_layer_normal(steps=5000):
 print('Loading data')
 
 for i in range(1, 10):
-    print(f"Training with {i} genes\n")
+    print(f"Training with {i} genes")
     for j in range(5):
-        print(f"\tRun number {j}")
-        train_mnist_single_layer_xox(i, global_seed=j)
+        with indent:
+            print(f"Run number {j}")
+            train_mnist_single_layer_xox(i, global_seed=j)
 
 print('Done')
 
