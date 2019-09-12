@@ -1,5 +1,6 @@
 import torch
 
+from indent import *
 from torch.nn import functional, Module
 
 import numpy as np
@@ -9,9 +10,17 @@ import torchvision
 
 run_count = 0
 
+opt_mapping = {
+    'Adam': torch.optim.Adam,
+    'SGD': torch.optim.SGD,
+    'RMSprop': torch.optim.RMSprop
+}
 
+@indenting
 def train(net, generator_factory, max_batches, *,
-          lr=0.01, log_dir='runs', title=None, batch_size=64, hyper_net=None, params=None, flatten=True):
+          optimizer='Adam', lr=0.01,
+          log_dir='runs', title=None, batch_size=64,
+          hyper_net=None, params=None, flatten=True):
     global run_count
 
     if params is None:
@@ -25,8 +34,9 @@ def train(net, generator_factory, max_batches, *,
     params = list(params)
     weight_shapes = [tuple(p.shape) for p in params]
     weight_params = sum(np.prod(shape) for shape in weight_shapes)
-    print(f"Training {len(params)} weights with total {weight_params} parameters:")
-    print(weight_shapes)
+    title_str = f'Training "{title}"' if title else 'Training'
+    shape_str = ' '.join('×'.join(map(str, x)) for x in weight_shapes)
+    print(f"{title_str} (arrays: {len(params)}, params: {weight_params}, shapes: {shape_str})")
     if log_dir:
         if title is None:
             run_count += 1
@@ -34,7 +44,9 @@ def train(net, generator_factory, max_batches, *,
         writer = tensorboardX.SummaryWriter(log_dir + '/' + str(title), flush_secs=2)
     else:
         writer = None
-    opt = torch.optim.Adam(params, lr=lr)
+
+    opt = opt_mapping[optimizer](params, lr=lr)
+
     time = 0
     accuracy_generator = generator_factory(batch_size, is_training=True)
     training_generator = generator_factory(batch_size, is_training=False)
@@ -88,7 +100,7 @@ def train(net, generator_factory, max_batches, *,
             running_loss = 0.95 * running_loss + 0.05 * loss
         if time % 10 == 0 and writer:
             writer.add_scalar("loss", running_loss, time)
-        if time % 500 == 0:
+        if time % 1000 == 0:
             if time % 2500 == 0:
                 acc = test_accuracy(net, accuracy_generator, flatten=flatten)
                 acc_history.append((time, acc))
@@ -106,7 +118,7 @@ def train(net, generator_factory, max_batches, *,
     if writer:
         writer.add_scalar("accuracy", acc, time)
         writer.close()
-    print(f"final accuracy = {acc:.3f}")
+    print(f"Done training, final accuracy = {acc:.3f}")
     history = {'loss': loss_history, 'accuracy': acc_history}
 
     # return a bunch of statistics about the training run
