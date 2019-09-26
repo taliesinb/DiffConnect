@@ -1,5 +1,13 @@
 import torch
 
+from torch import nn
+from data import mnist_generator, cifar_generator
+from xox import XOXHyperNetwork
+from hyper import RandomBasisHyperNetwork
+from utils import reset_parameters
+from train import train
+
+
 '''
 This file demonstrates training of a single MLP to solve MNIST, then followed
 by training of a hypernetwork-controlled MLP on the same task. Accuracy is lower for
@@ -24,11 +32,6 @@ Training 5 weights with total 8346 parameters:
 final accuracy = 0.906
 '''
 
-from torch import nn
-from data import mnist_generator, cifar_generator
-from xox import XOXHyperNetwork, HyperNetwork
-from utils import reset_parameters
-from train import train
 
 # making a simple MLP
 net = nn.Sequential(
@@ -37,6 +40,11 @@ net = nn.Sequential(
     nn.Linear(64, 10)
 )
 
+
+
+net = nn.Linear(28*28, 10)
+
+
 # train the MLP on mnist for 2000 batches (this should achieve around 95% final accuracy)
 # train(net, mnist_generator, 2000, title='ordinary')
 
@@ -44,8 +52,13 @@ net = nn.Sequential(
 reset_parameters(net)
 
 # create a hyper network that produces the weights and biases of the network
-hyper = XOXHyperNetwork(net, num_genes=9, fix_gene_matrices=True, fix_o_matrix=True)
+hyper = XOXHyperNetwork(net, num_genes=10, fix_gene_matrices=True, fix_o_matrix=True)
 
 # train the network via the hypernetwork (this should achieve around 90% final accuracy)
-train(net, mnist_generator, 2000, title='hyper', hyper_net=hyper)
+train(net, mnist_generator, 10000, title='xox', hyper_net=hyper)
 
+# create a hyper network that produces the weights and biases of the network
+hyper = RandomBasisHyperNetwork(net, ndims=400)
+
+# train the network via the hypernetwork (this should achieve around 90% final accuracy)
+train(net, mnist_generator, 2000, title='random', hyper_net=hyper)
