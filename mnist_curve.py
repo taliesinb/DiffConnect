@@ -94,7 +94,7 @@ for i in range(1, 10):
             print(f"Run number {j}")
             train_mnist_single_layer_xox(i, global_seed=j)
 
-for i in [10, 50, 100, 200, 500]:
+for i in [10, 50, 100, 200, 500, 1000]:
     print(f"Training with {i}-dimensional subspace")
     for j in range(5):
         with indent:
@@ -107,19 +107,18 @@ results_xox = load_cached_results_as_pandas(train_mnist_single_layer_xox)
 results_random = load_cached_results_as_pandas(train_mnist_single_layer_random_basis)
 results_normal = train_mnist_single_layer_normal()
 
-print(results_xox)
-
 full_params = results_normal['weight_params']
 results_xox['capacity'] = results_xox['weight_params'].apply(lambda x: x / full_params)
 
 fig = plt.figure()
-
 ax1 = fig.add_subplot(111)
-sns.pointplot(x='num_genes', y='accuracy', data=results_xox, aspect=1.4, ax=ax1, join=False)
 ax1.axhline(y=results_normal['accuracy'], color='black', linewidth=2, alpha=.7)
+sns.pointplot(x='num_genes', y='accuracy', data=results_xox, aspect=1.4, join=False)
 
-ax2 = plt.twinx(ax1)
-plt2 = sns.pointplot(x='num_genes', y='capacity', data=results_xox, aspect=1.4, ax=ax2, join=False, color="#bb3f3f")
+fig = plt.figure()
+ax1 = fig.add_subplot(111)
+ax1.axhline(y=results_normal['accuracy'], color='black', linewidth=2, alpha=.7)
+sns.pointplot(x='weight_params', y='accuracy', data=results_xox, aspect=1.4, join=False)
 
 fig = plt.figure()
 ax1 = fig.add_subplot(111)
