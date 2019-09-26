@@ -8,6 +8,8 @@ import os.path
 import time
 import functools
 import glob
+
+from pprint import pprint
 from collections import OrderedDict
 
 
@@ -43,6 +45,9 @@ LOAD_GLOBAL = opcode.opmap['LOAD_GLOBAL']
 GLOBAL_OPS = (STORE_GLOBAL, DELETE_GLOBAL, LOAD_GLOBAL)
 
 
+cache_logging = False
+
+
 # adapted from https://web.archive.org/web/20140626004012/http://www.picloud.com
 def get_code_object_global_names(code_object):
     global code_object_global_names_cache
@@ -75,13 +80,15 @@ def hash_code_object_dependencies(fn, hasher, module_scope):
     code_object = fn.__code__
     global_dict = fn.__globals__
     if module_scope and fn.__module__ != module_scope:
-        # print (f"skipping dependencies out-of-scope function {fn.__name__}")
+        if cache_logging:
+            print (f"skipping dependencies out-of-scope function {fn.__name__}")
         return
     for var in get_code_object_global_names(code_object):
         if var in sorted(global_dict.keys()):
             val = global_dict[var]
             digest = hash_digest(val, module_scope)
-            # print(f'{fn.__name__} depends on {var} which has digest {digest}')
+            if cache_logging:
+                print(f'{fn.__name__} depends on {var} which has digest {digest}')
             hasher.update(digest)
 
 
@@ -90,7 +97,7 @@ def hash_code_object_dependencies(fn, hasher, module_scope):
 def get_stable_code_object_fields(co):
     return (co.co_argcount,
             co.co_nlocals,
-            co.co_flags,
+            co.co_flags & ~1,   # null out the 'optimized' flag
             co.co_stacksize,
             co.co_names,
             co.co_varnames,
@@ -112,7 +119,8 @@ def hash_digest(x, module_scope=None, hasher=None):
     else:
         dump = dill.dumps(x)
     hasher.update(dump)
-    # print(f"base hash for {x}: {hasher.hexdigest()}")
+    if cache_logging:
+        print(f"base hash for {x}: {hasher.hexdigest()}")
     if is_func:
         hash_code_object_dependencies(x, hasher, module_scope or x.__module__)
     digest = hasher.digest()
@@ -199,7 +207,8 @@ def cached(fn):
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         input_dict = normalize_args(fn.__name__, args, kwargs, fn.__arg_names__, fn.__kwdefaults__)
-        # print(f"Input: {input_dict}")
+        if cache_logging:
+            print(f"Input: {input_dict}")
         input_dump = dill.dumps(input_dict)
         hasher = hashlib.new('md5')
         hasher.update(input_dump)
@@ -216,7 +225,8 @@ def cached(fn):
         output = fn(*args, **kwargs)
         end = time.time()
         output_dict = {'input': input_dict, 'output': output, 'timing': end - start}
-        # print(f"Output: {output_dict}")
+        if cache_logging:
+            print(f"Output: {output_dict}")
         pickle(output_path, output_dict)
         return output
 
@@ -237,31 +247,30 @@ if __name__ == '__main__':
 
     from time import sleep
 
+    def zint(x):
+        print("Z", x)
+
     @cached
     def double(x):
         sleep(0.5)
+        print('foo')
         return x * 2
 
-    print("uncached")
-    # this will be slow
-    for i in range(10):
+    print("uncached (will be slow)")
+    for i in range(5):
         double(i)
 
-    print("cached")
-    # this will be fast
-    for i in range(10):
+    print("cached (will be fast)")
+    for i in range(5):
         double(i)
 
-    print("uncached (global seed)")
-    # this will be slow again, (one per seed)
-    for seed in range(10):
+    print("uncached (will be slow, unique global seed)")
+    for seed in range(5):
         double(0, global_seed=seed)
 
-    print("cached (global seed)")
-    # this will be fast again
-    for seed in range(10):
+    print("cached (will be fast, reuse global seed)")
+    for seed in range(5):
         double(0, global_seed=seed)
 
-
-    # this returns all the values
-    print(list(load_cached_results(double)))
+    print("all cached values")
+    pprint(list(load_cached_results(double)))
