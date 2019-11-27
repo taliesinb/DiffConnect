@@ -55,11 +55,11 @@ def train(net, generator_factory, max_batches, *,
     acc_history = []
 
     # main training loop
-    for img, label in training_generator:
+    for inputs, labels, *rest in training_generator:
         time += 1
         opt.zero_grad()
         if flatten:
-            img = torch.flatten(img, start_dim=1)
+            inputs = torch.flatten(inputs, start_dim=1)
 
         # if we have a hyper network, we should use its .forward method to
         # derive the parameters for our network
@@ -69,15 +69,15 @@ def train(net, generator_factory, max_batches, *,
             hyper_net.forward()
 
         # apply the net to the input batch
-        res = net(img)
+        res = net(inputs, *rest)
         if not isinstance(res, tuple):
             res = res, 0
 
         # the second returned value should be additional losses (if any)
-        label_prime, extra_loss = res
+        labels_prime, extra_loss = res
 
         # calculate the loss
-        loss = functional.cross_entropy(label_prime, label)
+        loss = functional.cross_entropy(labels_prime, labels)
         loss += extra_loss
 
         # obtain gradients of the loss
@@ -133,10 +133,10 @@ def train(net, generator_factory, max_batches, *,
 
 def test_accuracy(net, generator, max_batches=5000, flatten=True):
     total = correct_total = 0
-    for img, label in generator:
+    for img, label, *rest in generator:
         if flatten:
             img = torch.flatten(img, start_dim=1)
-        label_prime = net(img).argmax(1)
+        label_prime = net(img, *rest).argmax(1)
         correct = sum(label == label_prime).item()
         correct_total += correct
         total += img.shape[0]
