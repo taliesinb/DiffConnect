@@ -68,7 +68,7 @@ def get_code_object_global_names(code_object):
         if code_object.co_consts:
             for const in code_object.co_consts:
                 if type(const) is types.CodeType:
-                    out_names |= get_code_object_global_names(const)
+                    out_names |= set(get_code_object_global_names(const))
     out_names = sorted(out_names)
     code_object_global_names_cache[code_object] = out_names
     return out_names
