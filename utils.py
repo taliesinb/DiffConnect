@@ -1,6 +1,96 @@
 import torch
 import torch.nn
+import torch.optim
+import tensorboardX
 import numpy as np
+
+from itertools import accumulate
+from functools import reduce
+import operator
+
+def product(arr):
+    return reduce(operator.mul, arr, 1)
+
+def sums(arr):
+    return list(accumulate(arr, operator.add, initial=0))
+
+def products(arr):
+    return list(accumulate(arr, operator.mul, initial=1))
+
+def most(arr):
+    return arr[:-1]
+
+def rest(arr):
+    return arr[1:]
+
+def reverse(arr):
+    return arr[::-1]
+
+def tap(f):
+    def f2(*args):
+        print("-----\n", args)
+        return f(*args)
+    return f2
+
+def uniform_stride(shape):
+    return reverse(products(reverse(rest(shape))))
+
+def subview(array, shape, offset):
+    return torch.as_strided(array, shape, uniform_stride(shape), offset)
+
+def split_with_shapes(array, shapes):
+    sizes = map(product, shapes)
+    return [subview(array, shape, offset) for shape, offset in zip(shapes, sums(sizes))]
+
+def split_as(array, other_arrays):
+    return split_with_shapes(array, [other.shape for other in other_arrays])
+
+def to_vector(arrays):
+    return torch.cat([a.view(-1) for a in arrays])
+
+# def multi_dot(vec, other_arrays):
+#     vecs = split_as(vec, other_arrays)
+#     return sum(map(tap(torch.dot), other_arrays, vecs))
+
+def multi_dot(vec, other_arrays):
+    return torch.dot(vec, to_vector(other_arrays))
+
+def hessian_vector_product(loss, params, vector):
+    grads = torch.autograd.grad(loss, params, create_graph=True)
+    jvp = multi_dot(vector, grads)
+    hvp = torch.autograd.grad(jvp, params, retain_graph=True)
+    return to_vector(hvp)
+
+def cross_entropy_loss(net, batch):
+    inputs, labels = batch
+    return torch.nn.functional.cross_entropy(net(inputs), labels)
+
+opt_mapping = {
+    'Adam': torch.optim.Adam,
+    'SGD': torch.optim.SGD,
+    'RMSprop': torch.optim.RMSprop
+}
+
+run_count = 0
+
+def make_log_writer(log_dir, title):
+    global run_count
+    if not log_dir: return None
+    if title is None:
+        run_count += 1
+        title = f"{run_count:03d}"
+    return tensorboardX.SummaryWriter(log_dir + '/' + str(title), flush_secs=2)
+
+def test_accuracy(net, generator, max_items=500):
+    total = correct_total = 0
+    for img, label, *rest in generator:
+        label_prime = net(img, *rest).argmax(1)
+        correct = sum(label == label_prime).item()
+        correct_total += correct
+        total += img.shape[0]
+        if total > max_items:
+            break
+    return correct_total / total
 
 
 def tensor_f32(x):

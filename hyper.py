@@ -16,6 +16,7 @@ def fix_name(name):
 
 class HyperNetwork(Module):
 
+    # a hypernetwork takes a target_net as a target that it will be computing the weights for
     def __init__(self, target_net):
         super().__init__()
         self.last_hyper_tensor = None
@@ -25,25 +26,35 @@ class HyperNetwork(Module):
         self.lambdas = [self.make_hyper_lambda(fix_name(name), param) for name, param in target_params.items()]
         self.outputs = None
         self.__dict__['target_params'] = list(target_params.values())
+        self.__dict__['target_net'] = target_net
         # ^ use of __dict__ stops us from owning the params
 
     def __post_init__(self):
         print(f"Creating {type(self).__name__} (modelling {self.orig_param_count} with {count_parameters(self)} params)")
 
-    def forward(self, set_arrays=True):
+    # forward sets computers the weights from the hyperweights and returns them
+    def forward(self):
         self.outputs = [fn() for fn in self.lambdas]
-        if set_arrays:
-            with torch.no_grad():
-                return [dst.copy_(src) for src, dst in zip(self.outputs, self.target_params)]
         return self.outputs
 
-    def backward(self):
-        grad_tensors = [p.grad for p in self.target_params]
-        torch.autograd.backward(self.outputs, grad_tensors)
+    def push_weights(self):
+        with torch.no_grad():
+            return [dst.copy_(src) for src, dst in zip(self.outputs, self.target_params)]
 
-    def discrepancy_loss(self):
-        loss = sum(mse_loss(src, dst.detach(), reduction='sum')
-                   for src, dst in zip(self.outputs, self.target_params))
+    # backward will copy gradients on the weights out of the target network and then propogate them through the
+    # hypernetwork. It can also take those gradients from some custom source.
+    def backward(self, *, grads=None):
+        if grads == None:
+            grads = [p.grad for p in self.target_params]
+        torch.autograd.backward(self.outputs, grads)
+
+    # discrepancy_loss gives the L2 loss between the generated parameters and the target network's current parameters
+    # hyper_grad and target_grad says who should get gradients
+    def discrepancy_loss(self, hyper_grad=False, target_grad=False):
+        loss = sum(mse_loss(
+                src if hyper_grad else src.detach(), 
+                dst if target_grad else dst.detach(),
+                reduction='sum') for src, dst in zip(self.outputs, self.target_params))
         return loss
 
     def make_hyper_lambda(self, name, param):
@@ -65,7 +76,7 @@ class HyperNetwork(Module):
 class DummyHyperNetwork(HyperNetwork):
 
     def __init__(self, target_net):
-        super().init(target_net)
+        super().__init__(target_net)
         self.__post_init__()
 
     def make_hyper_lambda(self, name, param):

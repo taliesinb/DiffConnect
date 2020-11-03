@@ -4,8 +4,7 @@ from io import StringIO
 import builtins
 
 
-# this is the decorator that ensures all prints within the function indent by one
-# extra level
+# this is the decorator that ensures all prints within the function indent by one extra level
 def indenting(fn):
 
     @functools.wraps(fn)
