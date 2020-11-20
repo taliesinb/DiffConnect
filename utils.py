@@ -8,6 +8,18 @@ from itertools import accumulate
 from functools import reduce
 import operator
 
+def rms(arr):
+    if type(arr) is list:
+        return list(map(rms, arr))
+    else:
+        return torch.sqrt(torch.mean(arr.detach().pow(2))).item()
+
+def ss(arr):
+    if type(arr) is list:
+        return list(map(ss, arr))
+    else:
+        return torch.sum(arr.detach().pow(2)).item()
+
 def product(arr):
     return reduce(operator.mul, arr, 1)
 
@@ -125,30 +137,27 @@ def tostr(x):
 
 
 def print_row(*args):
-    print(' '.join(tostr(arg).rjust(12, ' ') for arg in args))
+    print(' '.join(tostr(arg).rjust(15, ' ') for arg in args))
 
 
 def count_parameters(model):
     return sum(np.prod(p.shape) for p in model.parameters())
 
 
-def summarize_parameters(model):
-    print_row('parameter', 'shape', 'mean', 'sd')
+def print_model_parameters(model):
+    print_row('parameter', 'shape', 'mean', 'sd', 'rms', 'gradrms')
     for key, value in model.named_parameters():
         mean = value.mean().item()
         sd = np.sqrt(value.var().item())
         shape = tuple(value.shape)
-        print_row(key, shape, mean, sd)
+        print_row(key, shape, mean, sd, rms(value), rms(value.grad) if value.grad is not None else '')
 
-
-def summarize_gradient(model):
-    print_row('gradient', 'mean', 'sd')
+def print_model_gradients(model):
+    print_row('gradient', 'RMS')
     for key, value in model.named_parameters():
-        if value.grad:
-            mean = value.mean().item()
-            sd = np.sqrt(value.var().item())
-            print_row(key, mean, sd)
-        print(key)
+        if value.requires_grad and value.grad is not None:
+            grad = value.grad
+            print_row(key, rms(grad))
 
 
 def batched_to_flat_image(t):

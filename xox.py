@@ -27,9 +27,6 @@ class XOXHyperNetwork(HyperNetwork):
             self.b_matrix = Parameter(self.b_matrix)
         self.__post_init__()
 
-    def params(self):
-        return self.
-
     def should_share_x(self, name, num_x):
         return (
             self.symmetric and

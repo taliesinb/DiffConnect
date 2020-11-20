@@ -15,6 +15,6 @@ net = nn.Sequential(
 
 hyper = XOXHyperNetwork(net, num_genes=100)
 
-summarize_parameters(net)
+print_model_parameters(net)
 hyper.forward()
-summarize_parameters(net)
+print_model_parameters(net)

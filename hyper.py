@@ -2,7 +2,8 @@ import torch
 
 import torch.autograd
 
-from torch.nn import Parameter, Module, Sequential, Linear, ReLU
+import math
+from torch.nn import init, Parameter, Module, Sequential, Linear, ReLU
 from torch.nn.functional import mse_loss
 from collections import OrderedDict
 from utils import count_parameters
@@ -81,6 +82,11 @@ class DummyHyperNetwork(HyperNetwork):
 
     def make_hyper_lambda(self, name, param):
         param = self.make_hyper_tensor(name, param.shape)
+        if len(param.shape) == 1: 
+            bound = 1 / math.sqrt(param.shape[0])
+            init.uniform_(param, -bound, bound)
+        else:
+            init.kaiming_uniform_(param, a=math.sqrt(5))
         return lambda: param
 
     def absorb(self, step_size=0.1):
