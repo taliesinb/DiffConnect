@@ -95,13 +95,13 @@ if __name__ == '__main__':
     from cache import *
     from torch.nn import Linear
     from train import train
-    from data import mnist_generator
+    from data import mnist
 
     @cached
     def train_mnist_single_layer_xox(num_genes, steps=5000, spatial_gene=False):
         net = Linear(28 * 28, 10)
         hyper = XOXHyperNetwork(net, num_genes=num_genes, skip_small=False, skip_vectors=True, spatial_gene=spatial_gene)
-        return train(net, mnist_generator, steps, title='hyper', hyper_net=hyper, log_dir=None)
+        return train(hyper, mnist, max_batches=steps, title='hyper', log_dir=None)
 
     print(train_mnist_single_layer_xox(5, spatial_gene=True))
     print(train_mnist_single_layer_xox(3, spatial_gene=False))

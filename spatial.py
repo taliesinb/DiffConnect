@@ -63,5 +63,5 @@ for i in range(5):
         nn.Linear(16, 10)
     )
     if i == 0: net[0].print_grids()
-    res = train(net, mnist_generator, 3000, log_dir=None, flatten=True)
+    res = train(net, mnist, max_batches=3000, log_dir=None, flatten=True)
 

@@ -1,7 +1,7 @@
 import torch
 
 from torch import nn
-from data import mnist_generator, cifar_generator
+from data import mnist, cifar
 from xox import XOXHyperNetwork
 from hyper import RandomBasisHyperNetwork
 
@@ -67,7 +67,7 @@ Training with 10 genes
 def train_mnist_single_layer_xox(num_genes, steps=5000):
     net = nn.Linear(28*28, 10)
     hyper = XOXHyperNetwork(net, num_genes=num_genes, skip_small=False, skip_vectors=True)
-    return train(net, mnist_generator, steps, title='hyper', hyper_net=hyper, log_dir=None)
+    return train(hyper, mnist, max_batches=steps, title='hyper', log_dir=None)
 
 @cached
 def train_mnist_single_layer_ha(num_genes, steps=5000):
@@ -76,13 +76,13 @@ def train_mnist_single_layer_ha(num_genes, steps=5000):
 @cached
 def train_mnist_single_layer_normal(steps=5000):
     net = nn.Linear(28*28, 10)
-    return train(net, mnist_generator, steps, log_dir=None)
+    return train(net, mnist, max_batches=steps, log_dir=None)
 
 @cached
 def train_mnist_single_layer_random_basis(ndims, steps=5000):
     net = nn.Linear(28*28, 10)
     hyper = RandomBasisHyperNetwork(net, ndims=ndims)
-    return train(net, mnist_generator, steps, title='random', hyper_net=hyper, log_dir=None)
+    return train(hyper, mnist, max_batches=steps, title='random', log_dir=None)
 
 
 print('Loading data')

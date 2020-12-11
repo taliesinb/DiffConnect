@@ -1,7 +1,7 @@
 import torch
 
 from torch import nn
-from data import mnist_generator, cifar_generator
+from data import mnist, cifar
 from xox import XOXHyperNetwork
 from hyper import RandomBasisHyperNetwork
 from utils import reset_parameters
@@ -46,7 +46,7 @@ net = nn.Linear(28*28, 10)
 
 
 # train the MLP on mnist for 2000 batches (this should achieve around 95% final accuracy)
-# train(net, mnist_generator, 2000, title='ordinary')
+# train(net, mnist, 2000, title='ordinary')
 
 # reset the weights and biases in the net to random values
 reset_parameters(net)
@@ -55,10 +55,11 @@ reset_parameters(net)
 hyper = XOXHyperNetwork(net, num_genes=10, fix_gene_matrices=True, fix_o_matrix=True)
 
 # train the network via the hypernetwork (this should achieve around 90% final accuracy)
-train(net, mnist_generator, 10000, title='xox', hyper_net=hyper)
+train(hyper, mnist, max_batches=10000, title='xox')
 
 # create a hyper network that produces the weights and biases of the network
+reset_parameters(net)
 hyper = RandomBasisHyperNetwork(net, ndims=400)
 
 # train the network via the hypernetwork (this should achieve around 90% final accuracy)
-train(net, mnist_generator, 2000, title='random', hyper_net=hyper)
+train(hyper, mnist, max_batches=2000, title='random')

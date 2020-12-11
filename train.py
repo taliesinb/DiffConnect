@@ -32,7 +32,7 @@ def train(net, iterator_factory, *,
     optimizer = utils.opt_mapping[optimizer](params, lr=lr)
 
     training_iterator, test_iterator = iterator_factory(batch_size=batch_size, flatten=flatten)
-    
+
     running_loss = None
     loss_history = []
     acc_history = []
