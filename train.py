@@ -79,7 +79,7 @@ def train(net, iterator_factory, *,
             'accuracy': acc,                    # final test accuracy
             'history': history,                 # dictionary containing history of losses and test accuracies over time
             'weight_shapes': weight_shapes,     # list of shapes of trained arrays
-            'weight_params': weight_params,     # list of names of trained arrays
+            'weight_params': weight_params,     # total number of weight parameters
             'batch_size': batch_size,           # batch size
             'batches': max_batches}             # number of batches to train for
 
