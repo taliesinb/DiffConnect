@@ -22,6 +22,15 @@ class GeneExpressionGenerator:
     def register_parameter(self, param_name : str, array):
         self.parent.register_parameter(self.name + ":" + param_name, array)
 
+    def forward(self):
+        pass
+
+def gaussian_expression(positions, shape, sigma):
+    ranges = [torch.linspace(-1.0, 1.0, d) for d in shape]
+    coords = torch.cartesian_prod(*ranges)
+    dists = torch.cdist(coords, positions)
+    y = torch.exp(-(dists / sigma) ** 2)
+    return y.view(*shape, positions.shape[0])
 
 class GaussianExpression(GeneExpressionGenerator):
 
@@ -31,11 +40,18 @@ class GaussianExpression(GeneExpressionGenerator):
 
     def generate(self):
         positions = uniform(self.num_genes, len(self.shape)) # positions of gaussians
-        ranges = [torch.linspace(-1.0, 1.0, d) for d in self.shape]
-        coords = torch.cartesian_prod(*ranges)
-        dists = torch.cdist(coords, positions)
-        y = torch.exp(-(dists / self.sigma) ** 2)
-        return y.view(*self.shape, positions.shape[0])
+        return gaussian_expression(positions, self.shape, self.sigma)
+
+
+class LearnedGaussianExpression(GaussianExpression):
+
+    def generate(self):
+        self.positions = nn.Parameter(uniform(self.num_genes, len(self.shape))) # positions of gaussians
+        self.register_parameter('gaussian_positions', self.positions)
+        return gaussian_expression(self.positions, self.shape, self.sigma)
+
+    def forward(self):
+        return gaussian_expression(self.positions, self.shape, self.sigma)
 
 class LearnedExpression(GeneExpressionGenerator):
 
@@ -66,10 +82,16 @@ class ParameterizedXOXLinear(nn.Module):
         self.o_array = o_expr.generate()
         i_size = self.i_array.numel()
         o_size = self.o_array.numel()
+        self.i_forward = i_expr.forward
+        self.o_forward = o_expr.forward
         self.o_matrix = nn.Parameter(torch.randn(num_genes, num_genes) * (1 / np.sqrt(3 * i_size)))
         self.bias = nn.Parameter(torch.zeros(o_size // num_genes))
 
     def forward(self, vec):
+        new_i_array = self.i_forward()
+        new_o_array = self.o_forward()
+        if new_i_array is not None: self.i_array = new_i_array
+        if new_o_array is not None: self.o_array = new_o_array
         weight = self.yox(
             self.o_array.flatten(end_dim=-2),
             self.i_array.flatten(end_dim=-2)

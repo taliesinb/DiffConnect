@@ -21,18 +21,14 @@ def train_mnist_single_layer_gaussian_to_learned(num_genes, steps=5000):
     return train(net, mnist, max_batches=steps, title='gaussian_to_learned', log_dir=None)
 
 @cached
-def train_mnist_single_layer_gaussian_to_gaussian_to_learned(num_genes, steps=5000):
-    net = Sequence(
-        ParameterizedXOXLinear(GaussianExpression([28, 28]), GaussianExpression([5, 5]), num_genes),
-        ParameterizedXOXLinear(GaussianExpression([28, 28]), LearnedExpression(10), num_genes)
-    )
-    return train(net, mnist, max_batches=steps, title='gaussian_to_learned', log_dir=None)
+def train_mnist_single_layer_learned_gaussian_to_learned(num_genes, steps=5000):
+    net = ParameterizedXOXLinear(LearnedGaussianExpression([28, 28]), LearnedExpression(10), num_genes)
+    return train(net, mnist, max_batches=steps, title='learned_gaussian_to_learned', log_dir=None)
 
 @cached
 def train_mnist_single_layer_gaussian_to_random(num_genes, steps=5000):
     net = ParameterizedXOXLinear(GaussianExpression([28, 28]), RandomExpression(10), num_genes)
     return train(net, mnist, max_batches=steps, title='gaussian_to_random', log_dir=None)
-
 
 @cached
 def train_mnist_single_layer_random_to_random(num_genes, steps=5000):
@@ -58,21 +54,9 @@ for i in [5, 10, 15, 20, 25, 30]:
         with indent:
             print(f"Run number {j}")
             train_mnist_single_layer_gaussian_to_learned(i, global_seed=j)
-
-for i in [5, 10, 15, 20, 25, 30]:
-    print(f"Training with {i} genes")
-    for j in range(5):
-        with indent:
-            print(f"Run number {j}")
+            train_mnist_single_layer_learned_gaussian_to_learned(i, global_seed=j)
             train_mnist_single_layer_gaussian_to_random(i, global_seed=j)
-
-for i in [5, 10, 15, 20, 25, 30]:
-    print(f"Training with {i} genes")
-    for j in range(5):
-        with indent:
-            print(f"Run number {j}")
             train_mnist_single_layer_random_to_random(i, global_seed=j)
-
 
 for i in [10, 50, 100, 200, 500, 1000]:
     print(f"Training with {i}-dimensional subspace")
@@ -85,6 +69,9 @@ print('Done')
 
 results_gaussian_to_learned = load_cached_results_as_pandas(train_mnist_single_layer_gaussian_to_learned)
 results_gaussian_to_learned['label'] = 'gaussian to learned'
+
+results_learned_gaussian_to_learned = load_cached_results_as_pandas(train_mnist_single_layer_learned_gaussian_to_learned)
+results_learned_gaussian_to_learned['label'] = 'learned gaussian to learned'
 
 results_gaussian_to_random = load_cached_results_as_pandas(train_mnist_single_layer_gaussian_to_random)
 results_gaussian_to_random['label'] = 'gaussian to random'
@@ -100,7 +87,14 @@ results_gaussian_to_gaussian_to_learned['label'] = 'gaussian to gaussian to lear
 
 results_normal = train_mnist_single_layer_normal()
 
-results = pd.concat([results_random_basis, results_gaussian_to_random, results_gaussian_to_learned, results_random_to_random, results_gaussian_to_gaussian_to_learned])
+results = pd.concat([
+    results_random_basis,
+    results_gaussian_to_random,
+    results_gaussian_to_learned,
+    results_learned_gaussian_to_learned,
+    results_random_to_random,
+    results_gaussian_to_gaussian_to_learned
+])
 
 fig = plt.figure()
 ax1 = fig.add_subplot(111)
