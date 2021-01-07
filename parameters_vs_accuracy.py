@@ -5,7 +5,7 @@ from data import mnist, cifar
 
 from hyper import RandomBasisHyperNetwork
 from train import train, cached_train
-from cache import cached
+import cache
 
 import seaborn as sns
 import pandas as pd
@@ -19,14 +19,13 @@ from types import FunctionType
 
 def train_params_and_accuracy(model, iterator, steps, lr, global_seed):
     res = cached_train(model, iterator, max_batches=steps, lr=lr, global_seed=global_seed)
-    return {'parameters': res['weight_params'], 'accuracy': res['accuracy']}
+    return {
+        'parameters': res['weight_params'],
+        'accuracy': res['final_accuracy'],
+        'best_accuracy': res['best_accuracy']
+    }
 
-cached_train_params_and_accuracy = cached(train_params_and_accuracy)
-
-def mlp(hidden_size=100):
-    return nn.Sequential(
-        nn.Linear(product(ishape), hidden_size), nn.Tanh(), nn.Linear(hidden_size, oshape)
-    )
+cached_train_params_and_accuracy = cache.cached(train_params_and_accuracy)
 
 '''
 Naming scheme for the model factories: the function name is built from fragments representing each layer,
@@ -38,7 +37,7 @@ There should be arguments that carry the unspecified parameters, (e.g. the '...'
 keyword 'genes' should always be present and should be applied to all XOX Linear throughout.
 '''
 
-ishape = [28, 28]
+ishape = (28, 28)
 oshape = 10
 
 def randomgaussian_learned(genes):
@@ -71,23 +70,31 @@ models = [
     random_learned,
 ]
 
+def mlp(hidden_size=100):
+    return nn.Sequential(
+        nn.Linear(product(ishape), hidden_size), nn.Tanh(), nn.Linear(hidden_size, oshape)
+    )
+
+cached_train_params_and_accuracy((mlp, ()), mnist, 50, 0.01, 0)
+
 def randombasis_mlp(ndims):
     return RandomBasisHyperNetwork(mlp(), ndims=ndims)
 
-for run in range(5):
+for run in range(1):
     with indent:
         print(f"Run number {run}")
-        for genes in [5,10,20,30]:#[1,5,10,15,20,25,30]:#range(1,31,5):
+        for genes in range(1,31):
             print(f"Training with {genes} genes")
             for model in models:
                 with indent:
-                    print('Model ', model.__name__)
+                    print(model.__name__)
                     with indent:
                         cached_train_params_and_accuracy((model, {'genes': genes}), mnist, steps=steps, lr=lr, global_seed=run)
 
-        for dims in np.logspace(np.log10(10),np.log10(1000),num = 10,dtype='int'):
+        for dims in np.logspace(np.log10(10),np.log10(1000),num = 20,dtype='int'):
             print(f"Training with {dims}-dimensional subspace")
             cached_train_params_and_accuracy((randombasis_mlp, {'ndims': dims}), mnist, steps=steps, lr=lr, global_seed=run)
 
-
-
+data = cache.load_cached_results_as_pandas(cached_train_params_and_accuracy)
+data['label'] = list(map(lambda t: t[0], data['model']))
+data.to_csv("parameters_vs_accuracy.csv", columns=['label', 'parameters', 'accuracy'])
