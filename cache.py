@@ -160,7 +160,13 @@ def load_cached_results_as_pandas(fn, exclude=None, index=None):
         records.append(record)
     return pandas.DataFrame.from_records(records, exclude=exclude, index=index)
 
-
+def load_multiple_cached_results_as_pandas(fn_list):
+    datasets = []
+    for fn in fn_list:
+        dataset = load_cached_results_as_pandas(fn)
+        dataset['label'] = fn.__name__
+        datasets.append(dataset)
+    return pd.concat(datasets)
 
 # this simulates the way that python will resolve positional and named arguments, yielding
 # a single ordered dict that contains the names of arguments and their values
@@ -170,8 +176,10 @@ def normalize_args(fn_name, args, kwargs, arg_names, defaults):
         if key not in arg_names:
             if key == 'global_seed':
                 result['global_seed'] = kwargs[key]
+            elif key in defaults:
+                result[key] = kwargs[key]
             else:
-                raise RuntimeError(f"{fn_name}: unknown key {key} provided")
+                raise RuntimeError(f"{fn_name}: unknown key {key} provided. Must be one of {arg_names} or {defaults}")
     if len(args) > len(arg_names):
         raise RuntimeError(f"{fn_name}: excess arguments provided {len(args)} > {len(arg_names)}")
     for i, name in enumerate(arg_names):
@@ -199,14 +207,14 @@ def cached(fn):
     fn.__cache_path__ = 'cache/' + fn.__name__ + '/' + hash_hexdigest(fn) + '/'
     fn.__arg_names__ = fn.__code__.co_varnames[:fn.__code__.co_argcount]
     defaults = fn.__defaults__ or []
-    fn.__kwdefaults__ = dict(zip(fn.__arg_names__[-len(defaults):], defaults))
+    kwdefaults = fn.__kwdefaults__ or dict(zip(fn.__arg_names__[-len(defaults):], defaults))
 
     if not os.path.exists(fn.__cache_path__):
         os.makedirs(fn.__cache_path__)
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
-        input_dict = normalize_args(fn.__name__, args, kwargs, fn.__arg_names__, fn.__kwdefaults__)
+        input_dict = normalize_args(fn.__name__, args, kwargs, fn.__arg_names__, kwdefaults)
         if cache_logging:
             print(f"Input: {input_dict}")
         input_dump = dill.dumps(input_dict)
@@ -221,7 +229,8 @@ def cached(fn):
         #
         if 'global_seed' in kwargs:
             apply_global_seed(kwargs['global_seed'])
-            del kwargs['global_seed']
+            if 'global_seed' not in fn.__arg_names__:
+                del kwargs['global_seed']
         output = fn(*args, **kwargs)
         end = time.time()
         output_dict = {'input': input_dict, 'output': output, 'timing': end - start}

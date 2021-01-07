@@ -3,6 +3,7 @@ import numpy as np
 import hyper
 import utils
 import indent
+import cache
 
 #@indent.indenting
 def train(net, iterator_factory, *,
@@ -11,6 +12,10 @@ def train(net, iterator_factory, *,
         optimizer='Adam', lr=0.01,
         log_dir='runs', title=None, 
         batch_size=64, flatten=True):
+
+    # if the net is actually a net factory, create the net from the factory
+    if utils.is_factory(net):
+        net = utils.run_factory(net)
 
     # if a hypernetwork was provided, we don't directly train via the network parameters,
     # we train via the hypernetwork parameters (which produce the network parameters)
@@ -141,3 +146,5 @@ def batched_to_flat_image(t):
 
     grid = torchvision.utils.make_grid(t, 10, normalize=(not red_blue), padding=1)
     return grid
+
+cached_train = cache.cached(train)

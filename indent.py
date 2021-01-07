@@ -47,7 +47,7 @@ def iprint(*args, indent=0, **kwargs):
         return _print(*args, **kwargs)
     io = StringIO()
     _print(*args, file=io, **kwargs)
-    tabs = '\t' * (_level + indent)
+    tabs = '    ' * (_level + indent)
     info, _last_info = _last_info, (_counter, _level)
     if info[0] != _last_info[0] and info[1] == _last_info[1]:
         sys.stdout.write(tabs + '----\n')

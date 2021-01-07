@@ -77,6 +77,15 @@ def cross_entropy_loss(net, batch):
     inputs, labels = batch
     return torch.nn.functional.cross_entropy(net(inputs), labels)
 
+def gaussian_filters(shape, positions, isigma):
+    ranges = [torch.linspace(-1.0, 1.0, d) for d in shape]
+    coords = torch.cartesian_prod(*ranges)
+    dists = torch.cdist(coords, positions)
+    if isinstance(isigma, torch.Tensor): 
+        isigma = isigma.unsqueeze(0)
+    y = torch.exp(-(dists * isigma) ** 2)
+    return y.view(*shape, positions.shape[0])
+
 opt_mapping = {
     'Adam': torch.optim.Adam,
     'SGD': torch.optim.SGD,
@@ -209,3 +218,18 @@ def print_image(t):
     rgb = np.transpose(rgb, [1, 2, 0])
     pyplot.imshow(1 - rgb)
     pyplot.show()
+
+def is_factory(t):
+    return isinstance(t, tuple) and len(t) >= 1 and callable(t[0])
+
+def run_factory(t):
+    factory_fn = t[0]
+    if len(t) == 1:
+        args, kwargs = [], {}
+    if len(t) == 2 and isinstance(t[1], tuple):
+        args, kwargs = t[1], {}
+    elif len(t) == 2 and isinstance(t[1], dict):
+        args, kwargs = [], t[1]
+    elif len(t) == 3 and isinstance(t[1], tuple) and isinstance(t[2], dict):
+        args, kwargs = t
+    return factory_fn(*args, **kwargs)
