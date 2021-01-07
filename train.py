@@ -41,6 +41,7 @@ def train(net, iterator_factory, *,
     running_loss = None
     loss_history = []
     acc_history = []
+    best_acc = 0
 
     # main training loop
     for batch_num in range(max_batches):
@@ -65,6 +66,7 @@ def train(net, iterator_factory, *,
         if batch_num % 1000 == 0:
             if batch_num % 2500 == 0:
                 acc = utils.test_accuracy(net, test_iterator)
+                best_acc = max(best_acc, acc)
                 acc_history.append((batch_num, acc))
                 if writer: writer.add_scalar("accuracy", acc, batch_num)
                 print(f"{batch_num:>5d}\t{running_loss:.3f}\t{acc:.3f}")
@@ -80,8 +82,9 @@ def train(net, iterator_factory, *,
     history = {'loss': loss_history, 'accuracy': acc_history}
 
     # return a bunch of statistics about the training run
-    return {'loss': running_loss,               # final loss
-            'accuracy': acc,                    # final test accuracy
+    return {'final_loss': running_loss,         # final loss
+            'final_accuracy': acc,              # final test accuracy
+            'best_accuracy': best_acc,          # best test accuracy
             'history': history,                 # dictionary containing history of losses and test accuracies over time
             'weight_shapes': weight_shapes,     # list of shapes of trained arrays
             'weight_params': weight_params,     # total number of weight parameters
