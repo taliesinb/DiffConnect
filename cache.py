@@ -91,45 +91,62 @@ def hash_code_object_dependencies(fn, hasher, module_scope):
                 print(f'{fn.__name__} depends on {var} which has digest {digest}')
             hasher.update(digest)
 
-
 # we don't want our hashing of functions to depend on unstable properties of the
 # co, like the filename, first line, source map, etc.
-def get_stable_code_object_fields(co):
-    return (co.co_argcount,
+class CodeObject:
+    def __init__(self, obj):
+        self.__name__ = getattr(obj, '__name__', 'anonymous')
+        if cache_logging:
+            print("stabilizing ", self.__name__)
+        co = getattr(obj, '__code__')
+        self.fields = (
+            co.co_argcount,
             co.co_nlocals,
             co.co_flags & ~1,   # null out the 'optimized' flag
             co.co_stacksize,
             co.co_names,
             co.co_varnames,
             co.co_code,
-            co.co_consts)
+            co.co_consts
+        )
+        obj.__CodeObject__ = self
 
+    def __repr__(self):
+        return self.__name__
+
+def stabilize(obj):
+    if hasattr(obj, '__CodeObject__'):
+        return getattr(obj, '__CodeObject__')
+    if hasattr(obj, '__code__'):
+        return CodeObject(obj)
+    return obj
 
 # this hashes a value, using dill. if that value is a function, we special case
 # the hashing to 1) be stable 2) include the hashes of those functions it depends on
+# we will recurse over tuples and dicts, in case one of their elements is also a function.
 def hash_digest(x, module_scope=None, hasher=None):
     global stable_hash_cache
     if x in stable_hash_cache:
         return stable_hash_cache.get(x)
-    is_func = hasattr(x, '__code__')
     if hasher is None:
         hasher = hashlib.new('md5')
-    if is_func:
-        dump = dill.dumps(get_stable_code_object_fields(x.__code__))
-    else:
-        dump = dill.dumps(x)
-    hasher.update(dump)
+    deps_queue = []
+    def stabilize_and_queue(value):
+        if hasattr(value, '__code__'):
+            deps_queue.append(value)
+            return stabilize(value)
+        return value
+    hasher.update(dill.dumps(container_recurse(stabilize_and_queue, x)))
     if cache_logging:
         print(f"base hash for {x}: {hasher.hexdigest()}")
-    if is_func:
-        hash_code_object_dependencies(x, hasher, module_scope or x.__module__)
+    for q in deps_queue:
+        hash_code_object_dependencies(q, hasher, module_scope or q.__module__)
     digest = hasher.digest()
     try:
         stable_hash_cache[x] = digest
     except TypeError:
         pass
     return digest
-
 
 def hash_hexdigest(x, module_scope=None):
     hasher = hashlib.new('md5')
@@ -143,8 +160,16 @@ def load_cached_results(fn):
         res = unpickle(file_path)
         yield res
 
+def container_recurse(f, value):
+    if isinstance(value, tuple):
+        return tuple(container_recurse(f, v) for v in value)
+    if isinstance(value, list):
+        return list(container_recurse(f, v) for v in value)
+    if isinstance(value, dict):
+        return dict((container_recurse(f, k), container_recurse(f, v)) for k, v in value.items())
+    return f(value)
 
-def load_cached_results_as_pandas(fn, exclude=None, index=None):
+def load_cached_results_as_pandas(fn, exclude=None, index=None, namify=True):
     import pandas
     cache_path = fn.__cache_path__
     records = []
@@ -157,6 +182,8 @@ def load_cached_results_as_pandas(fn, exclude=None, index=None):
         record = inputs
         record.update(outputs)
         record['timing'] = res['timing']
+        if namify:
+            record = container_recurse(lambda e: getattr(e, '__name__', e), record)
         records.append(record)
     return pandas.DataFrame.from_records(records, exclude=exclude, index=index)
 
@@ -200,7 +227,6 @@ def apply_global_seed(seed):
     import torch
     torch.manual_seed
 
-
 # this is the decorator that turns a function into a disk-memoizing version
 def cached(fn):
 
@@ -215,6 +241,7 @@ def cached(fn):
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         input_dict = normalize_args(fn.__name__, args, kwargs, fn.__arg_names__, kwdefaults)
+        input_dict = container_recurse(stabilize, input_dict)
         if cache_logging:
             print(f"Input: {input_dict}")
         input_dump = dill.dumps(input_dict)
@@ -256,8 +283,16 @@ if __name__ == '__main__':
 
     from time import sleep
 
+    cache_logging = True
+
     def zint(x):
         print("Z", x)
+
+    print("hash of func:")
+    print(hash_digest(zint))
+
+    print("hash of func in tuple:")
+    print(hash_digest((zint, 3, 4)))
 
     @cached
     def double(x):
