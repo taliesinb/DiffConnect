@@ -43,7 +43,7 @@ two_layer_models = [
     LearnedGaussian_LearnedGaussian_LearnedGaussian_Random
 ]
 
-genes = [1,5,10] # range(1, 10)
+genes = [1,5,10] # range(1,10)
 hshape = [[10, 10], [7, 7], [5, 5], [3, 3], [2, 2]]
 records = train_models(two_layer_models, {'genes': genes, 'hshape':hshape}, mnist, max_batches=5, fields=['weight_param_count', 'best_accuracy'])
 save_to_csv('scaling_two_layers.csv', records)

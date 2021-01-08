@@ -39,5 +39,5 @@ one_layer_models = [
     Random_Learned,
 ]
 
-records = train_models(one_layer_models, {'genes': [5]}, mnist, max_batches=5, fields=['weight_param_count', 'best_accuracy'])
+records = train_models(one_layer_models, {'genes': range(1, 31)}, mnist, max_batches=40000, test_interval=2000, fields=['weight_param_count', 'best_accuracy'])
 save_to_csv('one_layer_models.csv', records)

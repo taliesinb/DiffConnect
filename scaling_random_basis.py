@@ -34,6 +34,6 @@ random_basis_models = [
 ]
 
 ndims = list(np.logspace(np.log10(10),np.log10(1000), num=10, dtype='int'))
-records = train_models(random_basis_models, {'ndims': ndims}, mnist, max_batches=40000, fields=['weight_param_count', 'best_accuracy'])
+records = train_models(random_basis_models, {'ndims': ndims}, mnist, max_batches=40000, test_interval=2000, fields=['weight_param_count', 'best_accuracy'])
 save_to_csv('scaling_random_basis.csv', records)
 
