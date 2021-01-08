@@ -4,9 +4,11 @@ import torch.optim
 import tensorboardX
 import numpy as np
 
-from itertools import accumulate
+import itertools as it
 from functools import reduce
 import operator
+
+import pandas
 
 def rms(arr):
     if type(arr) is list:
@@ -20,14 +22,21 @@ def ss(arr):
     else:
         return torch.sum(arr.detach().pow(2)).item()
 
+def cartesian_product(container):
+    if isinstance(container, dict):
+        keys = list(container.keys())
+        values = list(container.values())
+        return [dict(zip(keys, entry)) for entry in cartesian_product(values)]
+    return list(it.product(*container))
+
 def product(arr):
     return reduce(operator.mul, arr, 1)
 
 def sums(arr):
-    return list(accumulate(arr, operator.add, initial=0))
+    return list(it.accumulate(arr, operator.add, initial=0))
 
 def products(arr):
-    return list(accumulate(arr, operator.mul, initial=1))
+    return list(it.accumulate(arr, operator.mul, initial=1))
 
 def most(arr):
     return arr[:-1]
@@ -89,7 +98,12 @@ def gaussian_filters(shape, positions, isigma):
 opt_mapping = {
     'Adam': torch.optim.Adam,
     'SGD': torch.optim.SGD,
-    'RMSprop': torch.optim.RMSprop
+    'RMSprop': torch.optim.RMSprop,
+    'Adadelta': torch.optim.Adadelta,
+    'Adagrad': torch.optim.Adagrad,
+    'AdamW': torch.optim.AdamW,
+    'Rprop': torch.optim.Rprop,
+    'ASGD': torch.optim.ASGD
 }
 
 run_count = 0
@@ -233,3 +247,6 @@ def run_factory(t):
     elif len(t) == 3 and isinstance(t[1], tuple) and isinstance(t[2], dict):
         args, kwargs = t
     return factory_fn(*args, **kwargs)
+
+def save_to_csv(path, records, exclude=[]):
+    return pandas.DataFrame.from_records(records, exclude=exclude).to_csv(path)

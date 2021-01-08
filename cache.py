@@ -266,6 +266,8 @@ def cached(fn):
         pickle(output_path, output_dict)
         return output
 
+    wrapper.cached_results = lambda: load_cached_results(fn)
+
     return wrapper
 
 
