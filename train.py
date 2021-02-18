@@ -171,7 +171,7 @@ def train_models(model_list, model_settings, iterator, runs=1, train_fn=cached_t
     if runs > 1:
         for seed in range(runs):
             with indent:
-                print(Fore.RED, f"Run #{run}", Fore.RESET)
+                print(Fore.RED, f"Run #{seed}", Fore.RESET)
                 single_run(seed)
     else:
         single_run(0)

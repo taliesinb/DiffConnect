@@ -12,38 +12,51 @@ from utils import product, save_to_csv
 ishape = (28, 28)
 oshape = 10
 
-def RandomGaussian_RandomGaussian_RandomGaussian_Random(genes, hshape):
+def make_possibly_shared_expressions(is_shared, fn):
+    if is_shared:
+        expr1 = expr2 = fn()
+    else:
+        expr1 = fn()
+        expr2 = fn()
+    return expr1, expr2
+
+def RandomGaussian_RandomGaussian_RandomGaussian_Random(genes, hshape, is_shared):
+    expr1, expr2 = make_possibly_shared_expressions(is_shared, lambda: RandomGaussianExpression(hshape))
     return nn.Sequential(
-        XOXLinear(RandomGaussianExpression(ishape), RandomGaussianExpression(hshape), genes),
-        XOXLinear(RandomGaussianExpression(hshape), RandomExpression(oshape), genes)
+        XOXLinear(RandomGaussianExpression(ishape), expr1, genes),
+        XOXLinear(expr2, RandomExpression(oshape), genes)
     )
 
-def RandomGaussian_RandomGaussian_LearnedGaussian_Random(genes, hshape):
+def RandomGaussian_LearnedGaussian_LearnedGaussian_Random(genes, hshape, is_shared):
+    expr1, expr2 = make_possibly_shared_expressions(is_shared, lambda: LearnedGaussianExpression(hshape))
     return nn.Sequential(
-        XOXLinear(RandomGaussianExpression(ishape), RandomGaussianExpression(hshape), genes),
-        XOXLinear(LearnedGaussianExpression(hshape), RandomExpression(oshape), genes)
+        XOXLinear(RandomGaussianExpression(ishape), expr1, genes),
+        XOXLinear(expr2, RandomExpression(oshape), genes)
     )
 
-def RandomGaussian_LearnedGaussian_LearnedGaussian_Random(genes, hshape):
+def LearnedGaussian_LearnedGaussian_LearnedGaussian_Random(genes, hshape, is_shared):
+    expr1, expr2 = make_possibly_shared_expressions(is_shared, lambda: LearnedGaussianExpression(hshape))
     return nn.Sequential(
-        XOXLinear(RandomGaussianExpression(ishape), LearnedGaussianExpression(hshape), genes),
-        XOXLinear(LearnedGaussianExpression(hshape), RandomExpression(oshape), genes)
+        XOXLinear(LearnedGaussianExpression(ishape), expr1, genes),
+        XOXLinear(expr2, RandomExpression(oshape), genes)
     )
 
-def LearnedGaussian_LearnedGaussian_LearnedGaussian_Random(genes, hshape):
+def RandomGaussian_LearnedGaussian_LearnedGaussian_Learned(genes, hshape, is_shared):
+    expr1, expr2 = make_possibly_shared_expressions(is_shared, lambda: LearnedGaussianExpression(hshape))
     return nn.Sequential(
-        XOXLinear(LearnedGaussianExpression(ishape), LearnedGaussianExpression(hshape), genes),
-        XOXLinear(LearnedGaussianExpression(hshape), RandomExpression(oshape), genes)
+        XOXLinear(RandomGaussianExpression(ishape), expr1, genes),
+        XOXLinear(expr2, LearnedExpression(oshape), genes)
     )
 
 two_layer_models = [
     RandomGaussian_RandomGaussian_RandomGaussian_Random,
-    RandomGaussian_RandomGaussian_LearnedGaussian_Random,
     RandomGaussian_LearnedGaussian_LearnedGaussian_Random,
-    LearnedGaussian_LearnedGaussian_LearnedGaussian_Random
+    LearnedGaussian_LearnedGaussian_LearnedGaussian_Random,
+    RandomGaussian_LearnedGaussian_LearnedGaussian_Learned
 ]
 
-genes = [1,5,10] # range(1,10)
-hshape = [[10, 10], [7, 7], [5, 5], [3, 3], [2, 2]]
-records = train_models(two_layer_models, {'genes': genes, 'hshape':hshape}, mnist, max_batches=5, fields=['weight_param_count', 'best_accuracy'])
+genes = range(1,20)
+hshape = [[10, 10]]
+num_steps = 10
+records = train_models(two_layer_models, {'genes': genes, 'hshape':hshape, 'is_shared': [False, True]}, mnist, max_batches=num_steps, fields=['weight_param_count', 'best_accuracy'], runs=10)
 save_to_csv('scaling_two_layers.csv', records)

@@ -13,15 +13,30 @@ import utils
 def uniform(*shape):
     return 2 * torch.rand(*shape) - 1
 
+'''
+class ProteinInteractions:
+
+    def __init__(self, genes):
+        self.o_matrix = 
+'''
+
+
 class GeneExpressionGenerator:
 
     def attach(self, parent, name : str, num_genes : int):
-        self.parent = parent
+        if getattr(self, 'parent', None):
+            return self.expressions
         self.name = name
         self.num_genes = num_genes
+        self.parent = parent
+        self.expressions = self.generate()
+        return self.expressions
 
     def register_parameter(self, param_name : str, array):
         self.parent.register_parameter(self.name + ":" + param_name, array)
+
+    def generate(self):
+        raise NotImplementedError("GeneExpressionGenerator is a virtual base class")
 
     def forward(self):
         pass
@@ -38,7 +53,7 @@ class GaussianExpression(GeneExpressionGenerator):
 class RandomGaussianExpression(GaussianExpression):
 
     def generate(self):
-        self.constant_positions = uniform(self.num_genes, len(self.shape)) 
+        self.constant_positions = uniform(self.num_genes, len(self.shape))
         return self.make_filters(self.constant_positions, 1/self.sigma)
 
 
@@ -48,7 +63,6 @@ class LearnedPositionGaussianExpression(GaussianExpression):
         self.learned_positions = nn.Parameter(uniform(self.num_genes, len(self.shape))) # positions of gaussians
         self.register_parameter('gaussian_positions', self.learned_positions)
         return self.forward()
-
     def forward(self):
         return self.make_filters(self.learned_positions, 1/self.sigma)
 
@@ -86,13 +100,16 @@ class RandomExpression(GeneExpressionGenerator):
         gene_matrix = torch.randn(self.size, self.num_genes)
         return gene_matrix
 
+'''
+possible todo: derive the normalization empirically after the initial generation
+in order to avoid having to guess the Xiaming nonsense.
+'''
+
 class XOXLinear(nn.Module):
     def __init__(self, i_expr, o_expr, num_genes, learned_bias=False):
         super().__init__()
-        i_expr.attach(self, 'input', num_genes)
-        o_expr.attach(self, 'input', num_genes)
-        self.i_array = i_expr.generate()
-        self.o_array = o_expr.generate()
+        self.i_array = i_expr.attach(self, 'input', num_genes)
+        self.o_array = o_expr.attach(self, 'output', num_genes)
         i_size = self.i_array.numel()
         o_size = self.o_array.numel()
         self.i_forward = i_expr.forward
