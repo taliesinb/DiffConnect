@@ -155,25 +155,34 @@ def tostr(x):
         return '{' + ','.join([tostr(k) + ':' + tostr(v) for k, v in x.items()]) + '}'
     elif isinstance(x, (np.ndarray, torch.Tensor)):
         return '<' + tostr(x.shape) + '>'
-    else:
-        return str(x)
+    elif isinstance(x, torch.Size):
+        return '⨉'.join(map(str, list(x)))
+    return str(x)
 
 
-def print_row(*args):
-    print(' '.join(tostr(arg).rjust(15, ' ') for arg in args))
+def print_row(*args, colsize=15):
+    print(' '.join(tostr(arg).rjust(colsize, ' ') for arg in args))
 
 
 def count_parameters(model):
     return sum(np.prod(p.shape) for p in model.parameters())
 
 
+def print_tensor_sizes(*args):
+    print('\t'.join(map(lambda x: tostr(x.size()), args)))
+
+
 def print_model_parameters(model):
-    print_row('parameter', 'shape', 'mean', 'sd', 'rms', 'gradrms')
+    print_row('parameter'.rjust(30, ' '), 'shape', 'mean', 'sd', 'rms', 'gradrms', colsize=10)
     for key, value in model.named_parameters():
+        key = tostr(key).rjust(30, ' ')
+        if value is None: 
+            print(key, 'NOT DEFINED')
+            continue
         mean = value.mean().item()
         sd = np.sqrt(value.var().item())
         shape = tuple(value.shape)
-        print_row(key, shape, mean, sd, rms(value), rms(value.grad) if value.grad is not None else '')
+        print_row(key, shape, mean, sd, rms(value), rms(value.grad) if value.grad is not None else '', colsize=10)
 
 def print_model_gradients(model):
     print_row('gradient', 'RMS')

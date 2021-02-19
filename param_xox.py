@@ -13,14 +13,6 @@ import utils
 def uniform(*shape):
     return 2 * torch.rand(*shape) - 1
 
-'''
-class ProteinInteractions:
-
-    def __init__(self, genes):
-        self.o_matrix = 
-'''
-
-
 class GeneExpressionGenerator:
 
     def attach(self, parent, name : str, num_genes : int):
@@ -101,37 +93,128 @@ class RandomExpression(GeneExpressionGenerator):
         return gene_matrix
 
 '''
-possible todo: derive the normalization empirically after the initial generation
-in order to avoid having to guess the Xiaming nonsense.
+ProteinInteractions can be attached to an XOXLinear when it is *created*,
+in which case the corresponding o_matrix will be owned by that layer, or
+they can be attached by a parent XOXSequential, which will own the o_matrix.
 '''
 
-class XOXLinear(nn.Module):
-    def __init__(self, i_expr, o_expr, num_genes, learned_bias=False):
-        super().__init__()
-        self.i_array = i_expr.attach(self, 'input', num_genes)
-        self.o_array = o_expr.attach(self, 'output', num_genes)
-        i_size = self.i_array.numel()
-        o_size = self.o_array.numel()
-        self.i_forward = i_expr.forward
-        self.o_forward = o_expr.forward
-        self.o_matrix = nn.Parameter(torch.randn(num_genes, num_genes) * (1 / np.sqrt(3 * i_size)))
-        if learned_bias:
-            self.bias = nn.Parameter(torch.zeros(o_size // num_genes))
-        else:
-            self.bias = torch.randn(o_size // num_genes) * 0.5
+'''
+class LinearProteinInteractions
+'''
 
-    def forward(self, vec):
+
+class ProteinInteraction:
+
+    def __init__(self, num_genes):
+        self.num_genes = num_genes
+        self.o_matrix = nn.Parameter(torch.randn(num_genes, num_genes))
+
+    def register_parameters(self, name, parent):
+        parent.register_parameter(name + ':o_matrix', self.o_matrix)
+
+    # takes y = N * d and x = M * d and o_matrix = d x d and produces M * N
+    def calculate_weights(self, y, x):
+        res = torch.matmul(y, torch.matmul(self.o_matrix, torch.t(x)))
+        return res
+
+class XOXSequential(nn.Sequential):
+    def __init__(self, *args, interaction=None):
+        super().__init__(*args)
+        self.interaction = interaction
+        if interaction:
+            for module in self.modules():
+                if hasattr(module, 'attach_interaction'):
+                    module.attach_interaction(interaction)
+            self.interaction.register_parameters('interaction', self)
+
+# this is calculating the scaling factor to make the gnerated weights
+# have a desired distribution empirically, so we simply *know* its right.
+# there will be some noise from run to run, but its just an initialization
+def calculate_reference_scaling(weights, init_fn=torch.nn.init.kaiming_normal_):
+    ref_weights = torch.empty(weights.size())
+    init_fn(ref_weights)
+    return ref_weights.std().item() / weights.std().item()
+class XOXLinear(nn.Module):
+    def __init__(self, i_expr, o_expr, interaction=None, learned_bias=False):
+        super().__init__()
+        self.i_expr = i_expr
+        self.o_expr = o_expr
+        self.learned_bias = learned_bias
+        if isinstance(interaction, int):
+            interaction = ProteinInteraction(interaction)
+        self.interaction = interaction
+        if interaction:
+            self.attach_interaction(interaction)
+            interaction.register_parameters('interaction', self)
+
+    def attach_interaction(self, interaction):
+        self.interaction = interaction
+        num_genes = interaction.num_genes
+        self.i_array = self.i_expr.attach(self, 'input', num_genes)
+        self.o_array = self.o_expr.attach(self, 'output', num_genes)
+        # we divide by num_genes rather than just take the first dimension
+        # since the {i,o}_arrays, since can be higher-rank thank two
+        i_size = self.i_array.numel() // num_genes
+        o_size = self.o_array.numel() // num_genes
+        self.i_forward = self.i_expr.forward
+        self.o_forward = self.o_expr.forward
+        if self.learned_bias:
+            self.bias = nn.Parameter(torch.zeros(o_size))
+        else:
+            self.bias = torch.randn(o_size) * 0.5
+        self.scaling = 1.0 # so that self.calculate_weight() will work for the reference calculation
+        self.scaling = calculate_reference_scaling(self.calculate_weights())
+
+    def calculate_weights(self):
+        if not self.interaction: raise RuntimeError("No protein interaction")
         new_i_array = self.i_forward()
         new_o_array = self.o_forward()
         if new_i_array is not None: self.i_array = new_i_array
         if new_o_array is not None: self.o_array = new_o_array
-        weight = self.yox(
+        return self.scaling * self.interaction.calculate_weights(
             self.o_array.flatten(end_dim=-2),
             self.i_array.flatten(end_dim=-2)
         )
-        return F.linear(vec, weight, self.bias)
 
-    # takes y = N * d and x = M * d and o_matrix = d x d and produces M * N
-    def yox(self, y, x):
-        res = torch.matmul(y, torch.matmul(self.o_matrix, torch.t(x)))
-        return res
+    def forward(self, vec):
+        return F.linear(vec, self.calculate_weights(), self.bias)
+
+'''
+from utils import *
+from train import train
+from data import mnist
+
+ishape = (28, 28)
+oshape = 10
+
+expr = RandomGaussianExpression([2,3])
+
+print('\n\nautomatically global interaction:')
+model = XOXSequential(
+    XOXLinear(LearnedExpression(ishape), expr),
+    XOXLinear(expr, LearnedExpression(oshape)),
+    interaction=ProteinInteraction(5)
+)
+
+print_model_parameters(model)
+train(model, mnist)
+
+print('\n\nmanually global interaction')
+interaction = ProteinInteraction(5)
+model = nn.Sequential(
+    XOXLinear(LearnedExpression(ishape), expr, interaction),
+    XOXLinear(expr, LearnedExpression(oshape), interaction)
+)
+
+print_model_parameters(model)
+train(model, mnist)
+
+print('\n\nlocal interactions')
+model = nn.Sequential(
+    XOXLinear(LearnedExpression(ishape), expr, ProteinInteraction(5)),
+    XOXLinear(expr, LearnedExpression(oshape), ProteinInteraction(5))
+)
+
+print_model_parameters(model)
+train(model, mnist)
+'''

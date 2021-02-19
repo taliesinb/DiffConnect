@@ -16,110 +16,113 @@ from indent import *
 from utils import product
 
 @cached
-def train_mnist_multi_layer_normal(steps=5000):
+def train_mnist_multi_layer_normal(steps, lr):
     net = nn.Sequential(
         nn.Linear(28*28, 100),
         nn.Tanh(),
         nn.Linear(100,10)
         )
-    return train(net, mnist, max_batches=steps, title='mnist_multi', log_dir=None)
+    return train(net, mnist, max_batches=steps, title='mnist_multi', log_dir=None, lr=lr)
 
 @cached
-def train_mnist_multi_layer_spatial_to_spatial_to_spatial(num_genes, steps=5000):
+def train_mnist_multi_layer_spatial_to_spatial_to_spatial(num_genes, steps, lr):
     net = nn.Sequential(
         ParameterizedXOXLinear(GaussianExpression([28, 28]), GaussianExpression([10,10]), num_genes),
         nn.Tanh(),
         ParameterizedXOXLinear(GaussianExpression([10, 10]), GaussianExpression([2,5]), num_genes)
     )
-    return train(net, mnist, max_batches=steps, title='gaussian_to_gaussian_to_gaussian', log_dir=None)
+    return train(net, mnist, max_batches=steps, title='gaussian_to_gaussian_to_gaussian', log_dir=None, lr=lr)
 
 @cached
-def train_mnist_multi_layer_spatial_to_spatial_to_learned(num_genes, steps=5000):
+def train_mnist_multi_layer_spatial_to_spatial_to_learned(num_genes, steps, lr):
     net = nn.Sequential(
         ParameterizedXOXLinear(GaussianExpression([28, 28]), GaussianExpression([10,10]), num_genes),
         nn.Tanh(),
         ParameterizedXOXLinear(GaussianExpression([10, 10]), LearnedExpression(10), num_genes)
     )
-    return train(net, mnist, max_batches=steps,title='gaussian_to_gaussian_to_learned', log_dir=None)
+    return train(net, mnist, max_batches=steps,title='gaussian_to_gaussian_to_learned', log_dir=None, lr=lr)
 
 @cached
-def train_mnist_multi_layer_spatial_to_spatial_to_random(num_genes, steps=5000):
+def train_mnist_multi_layer_spatial_to_spatial_to_random(num_genes, steps, lr):
     net = nn.Sequential(
         ParameterizedXOXLinear(GaussianExpression([28, 28]), GaussianExpression([10,10]), num_genes),
         nn.Tanh(),
         ParameterizedXOXLinear(GaussianExpression([10, 10]), RandomExpression(10), num_genes)
     )
-    return train(net, mnist, max_batches=steps,title='gaussian_to_gaussian_to_random', log_dir=None)
+    return train(net, mnist, max_batches=steps,title='gaussian_to_gaussian_to_random', log_dir=None, lr=lr)
 
 @cached
-def train_mnist_multi_layer_random_to_random_to_random(num_genes, steps=5000):
+def train_mnist_multi_layer_random_to_random_to_random(num_genes, steps, lr):
     net = nn.Sequential(
         ParameterizedXOXLinear(RandomExpression(28*28), RandomExpression(10*10), num_genes),
         nn.Tanh(),
         ParameterizedXOXLinear(RandomExpression(10*10), RandomExpression(10), num_genes)
     )
-    return train(net, mnist, max_batches=steps,title='random_to_random_to_random', log_dir=None)
+    return train(net, mnist, max_batches=steps,title='random_to_random_to_random', log_dir=None, lr=lr)
 
 @cached
-def train_mnist_multi_layer_learned_to_learned_to_learned(num_genes, steps=5000):
+def train_mnist_multi_layer_learned_to_learned_to_learned(num_genes, steps, lr):
     net = nn.Sequential(
         ParameterizedXOXLinear(LearnedExpression(28*28), LearnedExpression(10*10), num_genes),
         nn.Tanh(),
         ParameterizedXOXLinear(LearnedExpression(10*10), LearnedExpression(10), num_genes)
     )
-    return train(net, mnist, max_batches=steps,title='learned_to_learned_to_learned', log_dir=None)
+    return train(net, mnist, max_batches=steps,title='learned_to_learned_to_learned', log_dir=None, lr=lr)
 
 @cached
-def train_mnist_multi_layer_learned_gaussian_to_learned_gaussian_to_learned(num_genes, steps=5000):
+def train_mnist_multi_layer_learned_gaussian_to_learned_gaussian_to_learned(num_genes, steps, lr):
     net = nn.Sequential(
         ParameterizedXOXLinear(LearnedGaussianExpression([28,28]), LearnedGaussianExpression([10,10]), num_genes),
         nn.Tanh(),
         ParameterizedXOXLinear(LearnedGaussianExpression([10,10]), LearnedExpression(10), num_genes)
     )
-    return train(net, mnist, max_batches=steps,title='learned_gaussian_to_learned_gaussian_to_learned', log_dir=None)
+    return train(net, mnist, max_batches=steps,title='learned_gaussian_to_learned_gaussian_to_learned', log_dir=None, lr=lr)
 
 @cached
-def train_mnist_multi_layer_learned_gaussian_to_learned_gaussian_to_random(num_genes, steps=5000):
+def train_mnist_multi_layer_learned_gaussian_to_learned_gaussian_to_random(num_genes, steps, lr):
     net = nn.Sequential(
         ParameterizedXOXLinear(LearnedGaussianExpression([28,28]), LearnedGaussianExpression([10,10]), num_genes),
         nn.Tanh(),
         ParameterizedXOXLinear(LearnedGaussianExpression([10,10]), RandomExpression(10), num_genes)
     )
-    return train(net, mnist, max_batches=steps,title='learned_gaussian_to_learned_gaussian_to_random', log_dir=None)
+    return train(net, mnist, max_batches=steps,title='learned_gaussian_to_learned_gaussian_to_random', log_dir=None, lr=lr)
 
 
 @cached
-def train_mnist_multi_layer_random_basis(ndims, steps=5000):
+def train_mnist_multi_layer_random_basis(ndims, steps, lr):
     net = nn.Sequential(
         nn.Linear(28*28, 100),
         nn.Tanh(),
         nn.Linear(100,10)
         )
     hyper = RandomBasisHyperNetwork(net, ndims=ndims)
-    return train(hyper, mnist, max_batches=steps, title='random_multi', log_dir=None)
+    return train(hyper, mnist, max_batches=steps, title='random_multi', log_dir=None, lr=lr)
 
 
 print('Loading data')
 
-for i in range(1,30):
+total_steps = 10000
+lr = 0.001
+
+for i in range(1,30,5):
     print(f"Training with {i} genes")
-    for j in range(10):
+    for j in range(2):
         with indent:
             print(f"Run number {j}")
-            train_mnist_multi_layer_spatial_to_spatial_to_spatial(num_genes = i,global_seed = j)
-            train_mnist_multi_layer_spatial_to_spatial_to_learned(num_genes = i,global_seed = j)
-            train_mnist_multi_layer_random_to_random_to_random(num_genes = i,global_seed = j)
-            train_mnist_multi_layer_learned_to_learned_to_learned(num_genes = i,global_seed = j)
-            train_mnist_multi_layer_learned_gaussian_to_learned_gaussian_to_learned(num_genes = i,global_seed = j)
-            train_mnist_multi_layer_learned_gaussian_to_learned_gaussian_to_random(num_genes = i,global_seed = j)
-            train_mnist_multi_layer_spatial_to_spatial_to_random(num_genes=i,global_seed = j)
+            train_mnist_multi_layer_spatial_to_spatial_to_spatial(num_genes = i,global_seed = j, steps=total_steps, lr=lr)
+            train_mnist_multi_layer_spatial_to_spatial_to_learned(num_genes = i,global_seed = j, steps=total_steps, lr=lr)
+            train_mnist_multi_layer_random_to_random_to_random(num_genes = i,global_seed = j, steps=total_steps, lr=lr)
+            train_mnist_multi_layer_learned_to_learned_to_learned(num_genes = i,global_seed = j, steps=total_steps, lr=lr)
+            train_mnist_multi_layer_learned_gaussian_to_learned_gaussian_to_learned(num_genes = i,global_seed = j, steps=total_steps, lr=lr)
+            train_mnist_multi_layer_learned_gaussian_to_learned_gaussian_to_random(num_genes = i,global_seed = j, steps=total_steps, lr=lr)
+            train_mnist_multi_layer_spatial_to_spatial_to_random(num_genes=i,global_seed = j, steps=total_steps, lr=lr)
 
 for i in np.logspace(np.log10(10),np.log10(1000),num = 30,dtype='int'):
     print(f"Training with {i}-dimensional subspace")
     for j in range(10):
         with indent:
             print(f"Run number {j}")
-            train_mnist_multi_layer_random_basis(i, global_seed=j)
+            train_mnist_multi_layer_random_basis(i, global_seed=j, steps=total_steps)
 
 print('Done')
 

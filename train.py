@@ -31,6 +31,10 @@ def train(net, iterator_factory, *,
         name = name or getattr(net[0], '__name__', None)
         net = utils.run_factory(net)
 
+    if net is None:
+      print(Fore.MAGENTA, 'model is None', Fore.RESET)
+      return None
+
     # if a hypernetwork was provided, we don't directly train via the network parameters,
     # we train via the hypernetwork parameters (which produce the network parameters)
     if isinstance(net, hyper.HyperNetwork):
@@ -163,6 +167,8 @@ def train_models(model_list, model_settings, iterator, runs=1, train_fn=cached_t
             for model in model_list:
                 with indent:
                     res = train_fn((model, setting), iterator, global_seed=seed, **kwargs)
+                    if res is None:
+                        continue
                     if not isinstance(res, dict):
                         res = {'result': res}
                     if 'name' not in setting and 'name' not in res and hasattr(model, '__name__'):
