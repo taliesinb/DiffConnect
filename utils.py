@@ -15,6 +15,7 @@ import pathlib
 import os
 import random
 import math
+import filecmp
 
 '''
 this lets us both randomize the order, and take a limited number of elements from a list.
@@ -324,11 +325,19 @@ def backup_file(path):
     if not path_obj.exists():
         return
     mtime = datetime.datetime.fromtimestamp(path_obj.stat().st_mtime)
-    time_str = mtime.strftime("%Yy%mm%dd%Hh%Mm")
-    backup_path = path + '.' + time_str + '.backup'
+    time_str = mtime.strftime("%Yy%mm%dd%Hh%Mm%Ss")
+    name, ext = os.path.splitext(path)
+    backup_path = name + '.' + time_str + ext
     os.rename(path, backup_path)
     return backup_path
 
 def save_to_csv(path, records, exclude=[], backup_previous_file=True):
-    if backup_previous_file: backup_file(path)
-    return pandas.DataFrame.from_records(records, exclude=exclude).to_csv(path)
+    directory = os.path.dirname(path)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    if backup_previous_file:
+        backup_path = backup_file(path)
+    new_path = pandas.DataFrame.from_records(records, exclude=exclude).to_csv(path)
+    if backup_previous_file and filecmp.cmp(path, backup_path):
+        os.remove(backup_path) # no point doing a backup if they are the same
+    return new_path

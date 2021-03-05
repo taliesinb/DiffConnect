@@ -15,7 +15,7 @@ train_params = {
     'fields': ['weight_param_count', 'best_accuracy'],
     'max_parameters': 1000, # this skips models that produce more than this number of parameters
     'shuffle': False, # whether to visit the settings in a random order
-    'subsample': 5, # this samples N elements from the full set of possibilities, for quick tests
+    'subsample': 1, # this samples N elements from the full set of possibilities, for quick tests
     'runs': 1
 }
 
@@ -34,11 +34,11 @@ def RandomBasisOneLayer(ishape, oshape, ndims:int):
 
 rb_1_params = {
     **io_params,
-    'ndims': LogIntegerRange(10, 1000, 10)
+    'ndims': LogIntegerRange(10, 50, 10)
 }
 
 records = train_models(RandomBasisOneLayer, rb_1_params, **train_params)
-save_to_csv('scaling_rb_1_mnist.csv', records)
+save_to_csv('csvs/scaling_rb_1_mnist.csv', records)
 
 ###################################################################################################
 
@@ -53,7 +53,7 @@ rb_2_params = {
 }
 
 records = train_models(RandomBasisTwoLayer, rb_2_params, **train_params)
-save_to_csv('scaling_rb_2_mnist.csv', records)
+save_to_csv('csvs/scaling_rb_2_mnist.csv', records)
 
 ###################################################################################################
 ## XOX                                                                                           ##
@@ -78,7 +78,7 @@ xox_1_params = {
 }
 
 records = train_models(OneLayerXOX, xox_1_params, **train_params)
-save_to_csv('scaling_xox_1_mnist.csv', records)
+save_to_csv('csvs/scaling_xox_1_mnist.csv', records)
 
 ###################################################################################################
 
@@ -112,5 +112,5 @@ xox_2_params = {
 }
 
 records = train_models(TwoLayerXOX, xox_2_params, **train_params)
-save_to_csv('scaling_xox_2_mnist.csv', records)
+save_to_csv('csvs/scaling_xox_2_mnist.csv', records)
 
