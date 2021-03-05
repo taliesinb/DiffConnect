@@ -12,27 +12,27 @@ from utils import product, save_to_csv, count_parameters
 def OneLayerXOX(
         genes:int,
         ishape:list, oshape:int,
-        is_first_learned:bool, is_first_spatial:bool, is_readout_learned:bool
+        is_input_learned:bool, is_input_gaussian:bool, is_readout_learned:bool
     ):
     interaction = ProteinInteraction(genes)
-    first_expression = MaybeLearnedMaybeGaussianExpression[is_first_spatial][is_first_learned](ishape)
+    input_expression = MaybeLearnedMaybeGaussianExpression[is_input_gaussian][is_input_learned](ishape)
     readout_expression = MaybeLearnedExpression[is_readout_learned](oshape)
-    return XOXLinear(first_expression, readout_expression, interaction=interaction)
+    return XOXLinear(input_expression, readout_expression, interaction=interaction)
 
 def TwoLayerXOX(
         genes:int,
         ishape:list, hshape:list, oshape:int,
-        is_first_learned:bool, is_hidden_learned:bool, is_readout_learned:bool,
+        is_input_learned:bool, is_hidden_learned:bool, is_readout_learned:bool,
         is_expression_shared:bool, is_interaction_shared:bool
     ):
     if is_expression_shared and not is_hidden_learned:
         print("warning: is_expression_shared=True has no effect when is_hidden_learned=False")
     interaction_1, interaction_2 = maybe_shared(is_interaction_shared, lambda: ProteinInteraction(genes))
-    first_expression = MaybeLearnedGaussianExpression[is_first_learned](ishape)
+    input_expression = MaybeLearnedGaussianExpression[is_input_learned](ishape)
     hidden_expression_1, hidden_expression_2 = maybe_shared(is_expression_shared, lambda: MaybeLearnedGaussianExpression[is_hidden_learned](hshape))
     readout_expression = MaybeLearnedExpression[is_readout_learned](oshape)
     return XOXSequential(
-        XOXLinear(first_expression, hidden_expression_1, interaction=interaction_1),
+        XOXLinear(input_expression, hidden_expression_1, interaction=interaction_1),
         XOXLinear(hidden_expression_2, readout_expression, interaction=interaction_2)
     )
 
@@ -42,7 +42,7 @@ train_params = {
     'fields': ['weight_param_count', 'best_accuracy'],
     'max_parameters': 1000, # this skips models that produce more than this number of parameters
     'shuffle': False,
-    'subsample': 50, # this samples N elements from the full set of possibilities, for quick tests
+    'subsample': 5, # this samples N elements from the full set of possibilities, for quick tests
     'runs': 1
 }
 
@@ -51,8 +51,8 @@ one_layer_params = {
     'oshape': 10,
 
     'genes': IntegerRange(30, 1),
-    'is_first_learned': TrueOrFalse,
-    'is_first_spatial': TrueOrFalse,
+    'is_input_learned': TrueOrFalse,
+    'is_input_gaussian': TrueOrFalse,
     'is_readout_learned': TrueOrFalse,
 }
 
@@ -68,7 +68,7 @@ two_layer_params = {
     'is_interaction_shared': True,
 
     'genes': IntegerRange(30, 1),
-    'is_first_learned': TrueOrFalse,
+    'is_input_learned': TrueOrFalse,
     'is_hidden_learned': TrueOrFalse,
     'is_readout_learned': TrueOrFalse,
 }
