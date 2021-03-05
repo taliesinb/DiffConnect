@@ -5,6 +5,8 @@ import utils
 from indent import indent
 import cache
 from colorama import Fore, Back, Style
+import random
+import math
 
 #@indent.indenting
 def train(net, iterator_factory, *,
@@ -17,7 +19,8 @@ def train(net, iterator_factory, *,
         max_stagnation=1,
         min_accuracy_improvement=0.005,
         print_interval=None,
-        test_interval=None
+        test_interval=None,
+        max_parameters=None
     ):
 
     if print_interval is None:
@@ -32,8 +35,12 @@ def train(net, iterator_factory, *,
         net = utils.run_factory(net)
 
     if net is None:
-      print(Fore.MAGENTA, 'model is None', Fore.RESET)
-      return None
+        print(Fore.MAGENTA, 'model is None', Fore.RESET)
+        return None
+
+    if max_parameters is not None and utils.count_parameters(net) > max_parameters:
+        print(Fore.MAGENTA, 'model paramcount', utils.count_parameters(net), 'exceeds max of', max_parameters, Fore.RESET)
+        return None
 
     # if a hypernetwork was provided, we don't directly train via the network parameters,
     # we train via the hypernetwork parameters (which produce the network parameters)
@@ -159,14 +166,39 @@ def train(net, iterator_factory, *,
 
 cached_train = cache.cached(train)
 
-def train_models(model_list, model_settings, iterator, runs=1, train_fn=cached_train, **kwargs):
+'''
+this wraps a parameter that will be varied across
+'''
+class Varying:
+    def __init__(self, values:list, shuffle=False, subsample=None):
+       self.values = utils.shuffle_and_subsample(values, shuffle, subsample)
+
+def filter_varying(params):
+    fixed = {k: v for k, v in params.items() if not isinstance(v, Varying)}
+    varying = {k: v.values for k, v in params.items() if isinstance(v, Varying)}
+    return fixed, varying
+
+TrueOrFalse = Varying([False, True])
+
+def IntegerRange(a:int, b:int, shuffle=False, subsample=None):
+    if a > b:
+        r = range(a, b-1, -1)
+    else:
+        r = range(a, b+1, 1)
+    return Varying(list(r), shuffle=shuffle, subsample=subsample)
+
+def train_models(model_list, model_settings, iterator, runs=1, train_fn=cached_train, shuffle=False, subsample=None, **kwargs):
     results = []
+    if not isinstance(model_list, list):
+        model_list = [model_list]
+    fixed_settings, varying_settings = filter_varying(model_settings)
+    settings_product = utils.shuffle_and_subsample(utils.cartesian_product(varying_settings), shuffle, subsample)
     def single_run(seed):
-        for setting in utils.cartesian_product(model_settings):
+        for setting in settings_product:
             print(Fore.YELLOW, f"{setting}", Fore.RESET)
             for model in model_list:
                 with indent:
-                    res = train_fn((model, setting), iterator, global_seed=seed, **kwargs)
+                    res = train_fn((model, {**setting, **fixed_settings}), iterator, global_seed=seed, **kwargs)
                     if res is None:
                         continue
                     if not isinstance(res, dict):

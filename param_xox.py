@@ -179,6 +179,17 @@ class XOXLinear(nn.Module):
     def forward(self, vec):
         return F.linear(vec, self.calculate_weights(), self.bias)
 
+MaybeLearnedGaussianExpression = {True: LearnedGaussianExpression, False: RandomGaussianExpression}
+MaybeLearnedExpression = {True: LearnedExpression, False: RandomExpression}
+MaybeLearnedMaybeGaussianExpression = {True: MaybeLearnedGaussianExpression, False: MaybeLearnedExpression}
+
+def maybe_shared(is_shared:bool, fn):
+    if is_shared:
+        e = e = fn()
+        return e, e
+    else:
+        return fn(), fn()
+
 '''
 from utils import *
 from train import train

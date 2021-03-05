@@ -10,6 +10,24 @@ import operator
 
 import pandas
 
+import datetime
+import pathlib
+import os
+import random
+import math
+
+'''
+this lets us both randomize the order, and take a limited number of elements from a list.
+'''
+def shuffle_and_subsample(values, shuffle, count):
+    if shuffle:
+        values = values.copy()
+        random.shuffle(values)
+    size = len(values)
+    if count and count < size:
+        values = [values[math.floor(i)] for i in np.arange(0, size, (size - 1) / (count - 1))]
+    return values
+
 def rms(arr):
     if type(arr) is list:
         return list(map(rms, arr))
@@ -257,5 +275,16 @@ def run_factory(t):
         args, kwargs = t
     return factory_fn(*args, **kwargs)
 
-def save_to_csv(path, records, exclude=[]):
+def backup_file(path):
+    path_obj = pathlib.Path(path)
+    if not path_obj.exists():
+        return
+    mtime = datetime.datetime.fromtimestamp(path_obj.stat().st_mtime)
+    time_str = mtime.strftime("%Yy%mm%dd%Hh%Mm")
+    backup_path = path + '.' + time_str + '.backup'
+    os.rename(path, backup_path)
+    return backup_path
+
+def save_to_csv(path, records, exclude=[], backup_previous_file=True):
+    if backup_previous_file: backup_file(path)
     return pandas.DataFrame.from_records(records, exclude=exclude).to_csv(path)
