@@ -180,6 +180,9 @@ def filter_varying(params):
 
 TrueOrFalse = Varying([False, True])
 
+def LogIntegerRange(a:int, b:int, num:int):
+    return Varying(list(np.logspace(np.log10(a),np.log10(b), num=num, dtype='int')))
+
 def IntegerRange(a:int, b:int, shuffle=False, subsample=None):
     if a > b:
         r = range(a, b-1, -1)

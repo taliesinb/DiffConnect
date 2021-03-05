@@ -1,5 +1,5 @@
 import torch
-import torch.nn
+import torch.nn as nn
 import torch.optim
 import tensorboardX
 import numpy as np
@@ -25,6 +25,8 @@ def shuffle_and_subsample(values, shuffle, count):
         random.shuffle(values)
     size = len(values)
     if count and count < size:
+        if count == 1:
+            return [values[math.floor(size / 2)]]
         values = [values[math.floor(i)] for i in np.arange(0, size, (size - 1) / (count - 1))]
     return values
 
@@ -48,6 +50,7 @@ def cartesian_product(container):
     return list(it.product(*container))
 
 def product(arr):
+    if isinstance(arr, (int, float)): return arr
     return reduce(operator.mul, arr, 1)
 
 def sums(arr):
@@ -100,9 +103,50 @@ def hessian_vector_product(loss, params, vector):
     hvp = torch.autograd.grad(jvp, params, retain_graph=True)
     return to_vector(hvp)
 
+class Reshape(nn.Module):
+    def __init__(self, shape):
+        super().__init__()
+        self.shape = [-1] + shape
+
+    def forward(self, arr):
+        return arr.view(self.shape)
+
+    def extra_repr(self):
+        return str(self.shape)
+
+def Sequential(*layers):
+    return nn.Sequential(*[l for l in layers if not isinstance(l, nn.Identity)])
+
+def Linear(ishape, oshape):
+    return nn.Linear(product(ishape), product(oshape))
+
+def MultilayerLinear(shapes:list, nonlinearity='tanh'):
+    layers = []
+    num_layers = len(shapes) - 1
+    if isinstance(shapes[0], list): layers.append(nn.Flatten())
+    for i in range(num_layers):
+        layers.append(Linear(shapes[i], shapes[i+1]))
+        if i < num_layers - 1: layers.append(Nonlinearity(nonlinearity))
+    layers.append(ToShape(shapes[-1]))
+    return Sequential(*layers)
+
+def ToShape(shape):
+    if isinstance(shape, int) or len(shape) == 1:
+        return nn.Identity()
+    return Reshape(shape)
+
+_nonlinearities = {
+    'tanh': nn.Tanh,
+    'relu': nn.ReLU,
+    'none': nn.Identity
+}
+
+def Nonlinearity(name:str):
+    return _nonlinearities[name]()
+
 def cross_entropy_loss(net, batch):
     inputs, labels = batch
-    return torch.nn.functional.cross_entropy(net(inputs), labels)
+    return nn.functional.cross_entropy(net(inputs), labels)
 
 def gaussian_filters(shape, positions, isigma):
     ranges = [torch.linspace(-1.0, 1.0, d) for d in shape]
@@ -160,7 +204,7 @@ def reset_parameters(model):
 
 
 def _reset_parameters(layer):
-    if isinstance(layer, (torch.nn.Conv2d, torch.nn.Linear)):
+    if isinstance(layer, (nn.Conv2d, nn.Linear)):
         layer.reset_parameters()
 
 
