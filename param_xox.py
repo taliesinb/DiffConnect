@@ -55,20 +55,21 @@ class LearnedPositionGaussianExpression(GaussianExpression):
         self.learned_positions = nn.Parameter(uniform(self.num_genes, len(self.shape))) # positions of gaussians
         self.register_parameter('gaussian_positions', self.learned_positions)
         return self.forward()
-    def forward(self):
-        return self.make_filters(self.learned_positions, 1/self.sigma)
 
-class LearnedGaussianExpression(GaussianExpression):
+    def forward(self):
+        return self.make_filters(torch.tanh(self.learned_positions), 1/self.sigma)
+
+class LearnedGaussianExpExpression(LearnedPositionGaussianExpression):
 
     def generate(self):
-        self.learned_positions = nn.Parameter(uniform(self.num_genes, len(self.shape)))
+        self.learned_positions = nn.Parameter(torch.atanh(uniform(self.num_genes, len(self.shape)))) # positions of gaussians
+        self.register_parameter('gaussian_tanh_positions', self.learned_tanh_positions)
         self.learned_log_sigmas = nn.Parameter(-np.log(self.sigma) * torch.ones(self.num_genes))
-        self.register_parameter('gaussian_positions', self.learned_positions)
         self.register_parameter('gaussian_log_sigmas', self.learned_log_sigmas)
-        return self.forward()
+        return super().generate()
 
     def forward(self):
-        return self.make_filters(self.learned_positions, torch.exp(self.learned_log_sigmas))
+        return self.make_filters(torch.tanh(self.learned_tanh_positions), torch.exp(self.learned_log_sigmas))
 
 def to_size(size):
     return size if isinstance(size, int) else utils.product(size)
@@ -105,8 +106,11 @@ class LinearProteinInteractions
 
 class ProteinInteraction:
 
-    def __init__(self, num_genes):
+    def __init__(self, num_genes, include_bias=False):
         self.num_genes = num_genes
+        self.include_bias = include_bias
+        if include_bias: num_genes += 1
+        self.biaser = utils.biaser(include_bias)
         self.o_matrix = nn.Parameter(torch.randn(num_genes, num_genes))
 
     def register_parameters(self, name, parent):
@@ -114,8 +118,35 @@ class ProteinInteraction:
 
     # takes y = N * d and x = M * d and o_matrix = d x d and produces M * N
     def calculate_weights(self, y, x):
-        res = torch.matmul(y, torch.matmul(self.o_matrix, torch.t(x)))
-        return res
+        return torch.matmul(self.biaser(y), torch.matmul(self.o_matrix, torch.t(self.biaser(x))))
+
+
+class RelabeledProteinInteraction(ProteinInteraction):
+
+    def __init__(self, num_genes, num_labels, nonlinearity='tanh', include_bias=False):
+        super().__init__(num_labels, include_bias)
+        self.num_genes = num_genes
+        self.num_labels = num_labels
+        self.nonlinearity = utils.Nonlinearity(nonlinearity)
+        if include_bias: num_genes += 1
+        self.relabeling_matrix = nn.Parameter(torch.randn(num_genes, num_labels))
+
+    def register_parameters(self, name, parent):
+        super().register_parameters(name, parent)
+        parent.register_parameter(name + ':relabeling_matrix', self.relabeling_matrix)
+
+    # takes y = N * d and x = M * d and o_matrix = d x d and produces M * N
+    def relabel(self, x):
+        return self.nonlinearity(torch.matmul(self.biaser(x), self.relabeling_matrix))
+
+    def calculate_weights(self, y, x):
+        return super().calculate_weights(self.relabel(y), self.relabel(x))
+
+def MaybeRelabeledProteinInteraction(num_genes, num_labels, nonlinearity='Tanh', include_bias=False):
+    if num_labels is None or num_labels == 0:
+        return ProteinInteraction(num_genes, include_bias=include_bias)
+    else:
+        return RelabeledProteinInteraction(num_genes, num_labels, nonlinearity, include_bias=include_bias)
 
 class XOXSequential(nn.Sequential):
     def __init__(self, *args, interaction=None):
@@ -127,19 +158,24 @@ class XOXSequential(nn.Sequential):
                     module.attach_interaction(interaction)
             self.interaction.register_parameters('interaction', self)
 
+def std(array):
+    return max(array.std().item(), 1e-9)
+
 # this is calculating the scaling factor to make the gnerated weights
 # have a desired distribution empirically, so we simply *know* its right.
 # there will be some noise from run to run, but its just an initialization
 def calculate_reference_scaling(weights, init_fn=torch.nn.init.kaiming_normal_):
     ref_weights = torch.empty(weights.size())
     init_fn(ref_weights)
-    return ref_weights.std().item() / weights.std().item()
+    return std(ref_weights) / std(weights)
+
 class XOXLinear(nn.Module):
-    def __init__(self, i_expr, o_expr, interaction=None, learned_bias=False):
+    def __init__(self, i_expr, o_expr, interaction=None, learned_bias=False, non_negative=False):
         super().__init__()
         self.i_expr = i_expr
         self.o_expr = o_expr
         self.learned_bias = learned_bias
+        self.non_negative = non_negative
         if isinstance(interaction, int):
             interaction = ProteinInteraction(interaction)
         self.interaction = interaction
@@ -171,10 +207,12 @@ class XOXLinear(nn.Module):
         new_o_array = self.o_forward()
         if new_i_array is not None: self.i_array = new_i_array
         if new_o_array is not None: self.o_array = new_o_array
-        return self.scaling * self.interaction.calculate_weights(
+        weights = self.scaling * self.interaction.calculate_weights(
             self.o_array.flatten(end_dim=-2),
             self.i_array.flatten(end_dim=-2)
         )
+        if self.non_negative: weights = F.relu(weights)
+        return weights
 
     def forward(self, vec):
         return F.linear(vec, self.calculate_weights(), self.bias)

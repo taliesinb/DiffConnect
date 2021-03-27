@@ -10,6 +10,7 @@ import operator
 
 import pandas
 
+import time
 import datetime
 import pathlib
 import os
@@ -30,6 +31,8 @@ def shuffle_and_subsample(values, shuffle, count):
             return [values[math.floor(size / 2)]]
         values = [values[math.floor(i)] for i in np.arange(0, size, (size - 1) / (count - 1))]
     return values
+
+
 
 def rms(arr):
     if type(arr) is list:
@@ -139,7 +142,8 @@ def ToShape(shape):
 _nonlinearities = {
     'tanh': nn.Tanh,
     'relu': nn.ReLU,
-    'none': nn.Identity
+    'none': nn.Identity,
+    'selu': nn.SELU
 }
 
 def Nonlinearity(name:str):
@@ -223,17 +227,25 @@ def tostr(x):
     return str(x)
 
 
+identity = lambda x: x
+
+def biaser(enabled):
+    return (add_unit if enabled else identity)
+
+def add_unit(x):
+    return torch.hstack((x, torch.ones((x.shape[0], 1))))
+
 def print_row(*args, colsize=15):
     print(' '.join(tostr(arg).rjust(colsize, ' ') for arg in args))
-
 
 def count_parameters(model):
     return sum(np.prod(p.shape) for p in model.parameters())
 
-
 def print_tensor_sizes(*args):
     print('\t'.join(map(lambda x: tostr(x.size()), args)))
 
+def to_shape_str(shape):
+    return '×'.join(map(tostr, shape))
 
 def print_model_parameters(model):
     print_row('parameter'.rjust(30, ' '), 'shape', 'mean', 'sd', 'rms', 'gradrms', colsize=10)
@@ -328,7 +340,11 @@ def backup_file(path):
     time_str = mtime.strftime("%Yy%mm%dd%Hh%Mm%Ss")
     name, ext = os.path.splitext(path)
     backup_path = name + '.' + time_str + ext
-    os.rename(path, backup_path)
+    for _ in range(5):
+        try:
+            os.rename(path, backup_path)
+        except:
+            time.sleep(0.1)
     return backup_path
 
 def save_to_csv(path, records, exclude=[], backup_previous_file=True):

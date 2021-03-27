@@ -9,6 +9,7 @@ import time
 import functools
 import glob
 
+from types import ModuleType, CodeType
 from pprint import pprint
 from collections import OrderedDict
 
@@ -38,15 +39,18 @@ Each pickled result contains a dictionary with keys:
 code_object_global_names_cache = weakref.WeakKeyDictionary()
 stable_hash_cache = weakref.WeakKeyDictionary()
 
+# objects that live in these modules will have a hash that is simply their full path,
+# rather than their transitive hashes
+shallow_hash_modules = [
+    'colorama', 'indent', 'data', 'cache',
+    'numpy', 'torch', 'pandas',
+    'tensorboardX', 'h5py', 'dill',
+    'random', 'math', 'itertools', 'functools', 'sys', 'io', 'builtins',
+    'operator', 'datetime', 'time', 'pathlib', 'os', 'filecmp'
+]
 
-STORE_GLOBAL = opcode.opmap['STORE_GLOBAL']
-DELETE_GLOBAL = opcode.opmap['DELETE_GLOBAL']
-LOAD_GLOBAL = opcode.opmap['LOAD_GLOBAL']
-GLOBAL_OPS = (STORE_GLOBAL, DELETE_GLOBAL, LOAD_GLOBAL)
-
-
+NAME_OPS = tuple(opcode.opmap[name] for name in ['STORE_GLOBAL', 'DELETE_GLOBAL', 'LOAD_GLOBAL', 'LOAD_METHOD', 'LOAD_ATTR'])
 cache_logging = False
-
 
 # adapted from https://web.archive.org/web/20140626004012/http://www.picloud.com
 def get_code_object_global_names(code_object):
@@ -62,8 +66,12 @@ def get_code_object_global_names(code_object):
         out_names = set()
         for instr in dis.get_instructions(code_object):
             op = instr.opcode
-            if op in GLOBAL_OPS:
-                out_names.add(names[instr.arg])
+            if op in NAME_OPS:
+                try:
+                    const = names[instr.arg]
+                    out_names.add(const)
+                except:
+                    pass
         # see if nested function have any global refs
         if code_object.co_consts:
             for const in code_object.co_consts:
@@ -73,61 +81,100 @@ def get_code_object_global_names(code_object):
     code_object_global_names_cache[code_object] = out_names
     return out_names
 
+def hash_module_functions(mod, global_names, hasher):
+    count = 0
+    mod_name = mod.__name__
+    for name in global_names:
+        if hasattr(mod, name):
+            elem = getattr(mod, name)
+            if getattr(elem, '__module__', None) == mod_name and hasattr(elem, '__code__'):
+                count += 1
+                if cache_logging:
+                    print(f"found possible match {name} in module {mod.__name__}")
+                # this is a shallow hash of just the function's code, and not its dependancies
+                hasher.update(dill.dumps(stabilize(elem)))
+    if count == 0 and cache_logging:
+        print(f'ignoring module {mod_name}, which has no attrs that match global names')
 
 # this generates the digests of all the globals that a function
 # depends on
 def hash_code_object_dependencies(fn, hasher, module_scope):
     code_object = fn.__code__
     global_dict = fn.__globals__
-    if module_scope and fn.__module__ != module_scope:
+    fn_module = fn.__module__
+    global_keys = sorted(global_dict.keys())
+    if module_scope and fn_module != module_scope:
         if cache_logging:
             print (f"skipping dependencies out-of-scope function {fn.__name__}")
         return
-    for var in get_code_object_global_names(code_object):
-        if var in sorted(global_dict.keys()):
+    global_names = get_code_object_global_names(code_object)
+    for var in global_names:
+        if var in global_keys:
             val = global_dict[var]
-            digest = hash_digest(val, module_scope)
-            if cache_logging:
-                print(f'{fn.__name__} depends on {var} which has digest {digest}')
-            hasher.update(digest)
+            if isinstance(val, ModuleType) and val.__name__ != fn_module:
+                hash_module_functions(val, global_names, hasher)
+            else:
+                digest = hash_digest(val)
+                if cache_logging:
+                    print(f'{fn.__name__} depends on {var} ({type(val)}) which has digest {digest}')
+                hasher.update(digest)
 
 # we don't want our hashing of functions to depend on unstable properties of the
 # co, like the filename, first line, source map, etc.
-class CodeObject:
-    def __init__(self, obj):
-        self.__name__ = getattr(obj, '__name__', 'anonymous')
-        if cache_logging:
-            print("stabilizing ", self.__name__)
-        co = getattr(obj, '__code__')
-        self.fields = (
-            co.co_argcount,
-            co.co_nlocals,
-            co.co_flags & ~1,   # null out the 'optimized' flag
-            co.co_stacksize,
-            co.co_names,
-            co.co_varnames,
-            co.co_code,
-            co.co_consts
-        )
-        obj.__CodeObject__ = self
-
-    def __repr__(self):
-        return self.__name__
+def get_stable_fields(co):
+    return (
+        co.co_argcount,
+        co.co_nlocals,
+        co.co_flags & ~1,   # null out the 'optimized' flag
+        co.co_names,
+        co.co_varnames,
+        co.co_code,
+        tuple(stabilize(const) for const in co.co_consts)
+    )
 
 def stabilize(obj):
-    if hasattr(obj, '__CodeObject__'):
-        return getattr(obj, '__CodeObject__')
+    if hasattr(obj, '__stabilized_code__'):
+        return getattr(obj, '__stabilized_code__')
     if hasattr(obj, '__code__'):
-        return CodeObject(obj)
+        if cache_logging:
+            print("stabilizing ", obj.__name__)
+        stable_fields = get_stable_fields(getattr(obj, '__code__'))
+        setattr(obj, '__stabilized_code__', stable_fields)
+        return stable_fields
+    if isinstance(obj, CodeType):
+        return get_stable_fields(obj)
     return obj
+
+def get_module_path(x):
+    if hasattr(x, '__loader__') and hasattr(x, '__name__'):
+        module_path = getattr(x, '__name__')
+    elif hasattr(x, '__module__'):
+        module_path = getattr(x, '__module__')
+        if hasattr(x, '__name__'): module_path += '.' + getattr(x, '__name__')
+    else:
+        return None, None
+    return module_path.split('.', 1)[0], module_path
 
 # this hashes a value, using dill. if that value is a function, we special case
 # the hashing to 1) be stable 2) include the hashes of those functions it depends on
 # we will recurse over tuples and dicts, in case one of their elements is also a function.
 def hash_digest(x, module_scope=None, hasher=None):
     global stable_hash_cache
+    print("calling hash_digest on ", x)
     if x in stable_hash_cache:
+        if cache_logging: print(x, ' is cached ')
         return stable_hash_cache.get(x)
+    base_module_path, full_module_path = get_module_path(x)
+    if base_module_path in shallow_hash_modules:
+        if cache_logging: print(f"using shallow hash for object with path '{full_module_path}' of type {type(x)}")
+        full_module_path = full_module_path.encode('utf-8')
+        stable_hash_cache[x] = full_module_path
+        return full_module_path
+    if hasattr(x, '__manual_hash__'):
+        manual_hash = getattr(x, '__manual_hash__')
+        if cache_logging: print(f"using manual hash with value {manual_hash}")
+        stable_hash_cache[x] = manual_hash
+        return manual_hash
     if hasher is None:
         hasher = hashlib.new('md5')
     deps_queue = []
@@ -143,8 +190,10 @@ def hash_digest(x, module_scope=None, hasher=None):
         hash_code_object_dependencies(q, hasher, module_scope or q.__module__)
     digest = hasher.digest()
     try:
+        print(f'putting {x} in stable hash cache')
         stable_hash_cache[x] = digest
     except TypeError:
+        print("failed to hash", x)
         pass
     return digest
 
@@ -228,19 +277,29 @@ def apply_global_seed(seed):
     torch.manual_seed
 
 # this is the decorator that turns a function into a disk-memoizing version
-def cached(fn):
+def cached(fn, manual_hash=None):
+    global cache_logging
 
-    fn.__cache_path__ = 'cache/' + fn.__name__ + '/' + hash_hexdigest(fn) + '/'
-    fn.__arg_names__ = fn.__code__.co_varnames[:fn.__code__.co_argcount]
+    if isinstance(manual_hash, str):
+        fn_hash = manual_hash
+    elif manual_hash is None:
+        fn_hash = hash_hexdigest(fn)
+    else:
+        cache_logging = True
+        print('current function hash: ', hash_hexdigest(fn))
+        raise Exception("manual hash should be a str or None")
+
+    __cache_path__ = 'cache/' + fn.__name__ + '/' + fn_hash + '/'
+    __arg_names__ = fn.__code__.co_varnames[:fn.__code__.co_argcount]
     defaults = fn.__defaults__ or []
-    kwdefaults = fn.__kwdefaults__ or dict(zip(fn.__arg_names__[-len(defaults):], defaults))
+    kwdefaults = fn.__kwdefaults__ or dict(zip(__arg_names__[-len(defaults):], defaults))
 
-    if not os.path.exists(fn.__cache_path__):
-        os.makedirs(fn.__cache_path__)
+    if not os.path.exists(__cache_path__):
+        os.makedirs(__cache_path__)
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
-        input_dict = normalize_args(fn.__name__, args, kwargs, fn.__arg_names__, kwdefaults)
+        input_dict = normalize_args(fn.__name__, args, kwargs, __arg_names__, kwdefaults)
         input_dict = container_recurse(stabilize, input_dict)
         if cache_logging:
             print(f"Input: {input_dict}")
@@ -248,7 +307,7 @@ def cached(fn):
         hasher = hashlib.new('md5')
         hasher.update(input_dump)
         input_digest = hasher.hexdigest()
-        output_path = fn.__cache_path__ + input_digest
+        output_path = __cache_path__ + input_digest
         if os.path.exists(output_path):
             res = unpickle(output_path)
             return res['output']
@@ -256,7 +315,7 @@ def cached(fn):
         #
         if 'global_seed' in kwargs:
             apply_global_seed(kwargs['global_seed'])
-            if 'global_seed' not in fn.__arg_names__:
+            if 'global_seed' not in __arg_names__:
                 del kwargs['global_seed']
         output = fn(*args, **kwargs)
         end = time.time()

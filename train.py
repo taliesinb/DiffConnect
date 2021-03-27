@@ -53,9 +53,9 @@ def train(net, iterator_factory, *,
 
     params = list(params)
     weight_shapes = [tuple(p.shape) for p in params]
-    weight_param_count = sum(np.prod(shape) for shape in weight_shapes)
+    weight_param_count = sum([utils.product(shape) for shape in weight_shapes])
     title_str = f"Training \'{name}\'" if name else 'Training'
-    shape_str = ' '.join('×'.join(map(str, x)) for x in weight_shapes)
+    shape_str = ' '.join(utils.to_shape_str(x) for x in weight_shapes)
     print(Fore.GREEN, f"{title_str}", Fore.RESET, f"(arrays: {len(params)}, params: {weight_param_count}, shapes: {shape_str})")
 
     writer = utils.make_log_writer(log_dir, name)
@@ -164,7 +164,7 @@ def train(net, iterator_factory, *,
 
     return result
 
-cached_train = cache.cached(train)
+cached_train = cache.cached(train, manual_hash="cached_train_0")
 
 '''
 this wraps a parameter that will be varied across
@@ -217,3 +217,11 @@ def train_models(model_list, model_settings, iterator, runs=1, train_fn=cached_t
     else:
         single_run(0)
     return results
+
+if __name__ == '__main__':
+
+    from data import mnist
+
+    net = utils.Linear(28*28, 10)
+    res = train(net, mnist, max_batches=1000)
+    print(res)

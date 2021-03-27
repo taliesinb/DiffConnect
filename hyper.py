@@ -24,7 +24,7 @@ class HyperNetwork(Module):
         target_params = OrderedDict(target_net.named_parameters())
         self.orig_param_count = count_parameters(target_net)
         self.param_names = [fix_name(name) for name in target_params.keys()]
-        self.lambdas = [self.make_hyper_lambda(fix_name(name), param) for name, param in target_params.items()]
+        self.lambdas = [self.make_hyper_lambda(fix_name(pytname), param) for name, param in target_params.items()]
         self.outputs = None
         self.__dict__['target_params'] = list(target_params.values())
         self.__dict__['target_net'] = target_net

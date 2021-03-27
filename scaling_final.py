@@ -11,19 +11,33 @@ from indent import indent
 
 train_params = {
     'iterator': mnist,
-    'max_batches': 10000,
+    'max_batches': 30000,
     'fields': ['weight_param_count', 'best_accuracy'],
-    'max_parameters': 1000, # this skips models that produce more than this number of parameters
+    'test_interval': 1000,
+    'max_parameters': 8000, # this skips models that produce more than this number of parameters
     'shuffle': False, # whether to visit the settings in a random order
     #'subsample': 1, # this samples N elements from the full set of possibilities, for quick tests
-    'runs': 1
+    'runs': 5
 }
+
+train_params_nomax = {**train_params, 'max_parameters': None}
 
 # these can be adjusted to train on e.g. CIFAR
 io_params = {
     'ishape': [28, 28],
     'oshape': 10
 }
+
+###################################################################################################
+## SLP BASELINE                                                                                  ##
+###################################################################################################
+
+def LinearNoBias(ishape, oshape):
+    return nn.Linear(product(ishape), product(oshape), bias=False)
+
+records = train_models(LinearNoBias, io_params, **train_params_nomax)
+save_to_csv('csvs/slp_baseline_mnist.csv', records)
+
 
 ###################################################################################################
 ## RANDOM BASIS                                                                                  ##
@@ -34,7 +48,7 @@ def RandomBasisOneLayer(ishape, oshape, ndims:int):
 
 rb_1_params = {
     **io_params,
-    'ndims': LogIntegerRange(10, 1000, 10)
+    'ndims': LogIntegerRange(10, 1000, 20)
 }
 
 #records = train_models(RandomBasisOneLayer, rb_1_params, **train_params)
@@ -75,15 +89,20 @@ def OneLayerXOX(
 
 xox_1_params = {
     **io_params,
-    'genes': IntegerRange(30, 1, subsample=8),
-    'is_input_learned': TrueOrFalse,
-    'is_input_gaussian': TrueOrFalse,
-    'is_readout_learned': TrueOrFalse,
-    'interaction_bias': TrueOrFalse
+    'genes': IntegerRange(1, 30),
+    'is_input_learned': True,
+    'is_input_gaussian': False,
+    'is_readout_learned': False,
+    'interaction_bias': False
 }
 
-records = train_models(OneLayerXOX, xox_1_params, **train_params)
-save_to_csv('csvs/scaling_xox_1_mnist.csv', records)
+train_params2 = {**train_params, 'max_parameters': None}
+records = train_models(OneLayerXOX, xox_1_params, **train_params2)
+save_to_csv('csvs/scaling_plain_xox_1_mnist.csv', records)
+
+
+#records = train_models(OneLayerXOX, xox_1_params, **train_params)
+#save_to_csv('csvs/scaling_xox_1_mnist.csv', records)
 
 ###################################################################################################
 
@@ -116,6 +135,6 @@ xox_2_params = {
     'is_readout_learned': TrueOrFalse,
 }
 
-records = train_models(TwoLayerXOX, xox_2_params, **train_params)
-save_to_csv('csvs/scaling_xox_2_mnist.csv', records)
+#records = train_models(TwoLayerXOX, xox_2_params, **train_params)
+#save_to_csv('csvs/scaling_xox_2_mnist.csv', records)
 
