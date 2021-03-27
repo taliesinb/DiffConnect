@@ -94,6 +94,9 @@ def split_as(array, other_arrays):
 def to_vector(arrays):
     return torch.cat([a.view(-1) for a in arrays])
 
+def torch_to_numpy(tensor):
+    return tensor.detach().numpy().copy()
+
 # def multi_dot(vec, other_arrays):
 #     vecs = split_as(vec, other_arrays)
 #     return sum(map(tap(torch.dot), other_arrays, vecs))
@@ -121,15 +124,15 @@ class Reshape(nn.Module):
 def Sequential(*layers):
     return nn.Sequential(*[l for l in layers if not isinstance(l, nn.Identity)])
 
-def Linear(ishape, oshape):
-    return nn.Linear(product(ishape), product(oshape))
+def Linear(ishape, oshape, bias=True):
+    return nn.Linear(product(ishape), product(oshape), bias=bias)
 
-def MultilayerLinear(shapes:list, nonlinearity='tanh'):
+def MultilayerLinear(shapes:list, nonlinearity='tanh', bias=True):
     layers = []
     num_layers = len(shapes) - 1
     if isinstance(shapes[0], list): layers.append(nn.Flatten())
     for i in range(num_layers):
-        layers.append(Linear(shapes[i], shapes[i+1]))
+        layers.append(Linear(shapes[i], shapes[i+1], bias=bias))
         if i < num_layers - 1: layers.append(Nonlinearity(nonlinearity))
     layers.append(ToShape(shapes[-1]))
     return Sequential(*layers)
@@ -335,16 +338,12 @@ def run_factory(t):
 def backup_file(path):
     path_obj = pathlib.Path(path)
     if not path_obj.exists():
-        return
+        return None
     mtime = datetime.datetime.fromtimestamp(path_obj.stat().st_mtime)
     time_str = mtime.strftime("%Yy%mm%dd%Hh%Mm%Ss")
     name, ext = os.path.splitext(path)
     backup_path = name + '.' + time_str + ext
-    for _ in range(5):
-        try:
-            os.rename(path, backup_path)
-        except:
-            time.sleep(0.1)
+    os.rename(path, backup_path)
     return backup_path
 
 def save_to_csv(path, records, exclude=[], backup_previous_file=True):
@@ -354,6 +353,6 @@ def save_to_csv(path, records, exclude=[], backup_previous_file=True):
     if backup_previous_file:
         backup_path = backup_file(path)
     new_path = pandas.DataFrame.from_records(records, exclude=exclude).to_csv(path)
-    if backup_previous_file and filecmp.cmp(path, backup_path):
+    if backup_previous_file and backup_path and filecmp.cmp(path, backup_path):
         os.remove(backup_path) # no point doing a backup if they are the same
     return new_path

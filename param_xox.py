@@ -59,17 +59,22 @@ class LearnedPositionGaussianExpression(GaussianExpression):
     def forward(self):
         return self.make_filters(torch.tanh(self.learned_positions), 1/self.sigma)
 
-class LearnedGaussianExpExpression(LearnedPositionGaussianExpression):
+class LearnedGaussianExpression(LearnedPositionGaussianExpression):
 
     def generate(self):
         self.learned_positions = nn.Parameter(torch.atanh(uniform(self.num_genes, len(self.shape)))) # positions of gaussians
-        self.register_parameter('gaussian_tanh_positions', self.learned_tanh_positions)
-        self.learned_log_sigmas = nn.Parameter(-np.log(self.sigma) * torch.ones(self.num_genes))
-        self.register_parameter('gaussian_log_sigmas', self.learned_log_sigmas)
+        self.register_parameter('gaussian_positions', self.learned_positions)
+        self.learned_sigmas = nn.Parameter(-np.log(self.sigma) * torch.ones(self.num_genes))
+        self.register_parameter('gaussian_sigmas', self.learned_sigmas)
         return super().generate()
 
     def forward(self):
-        return self.make_filters(torch.tanh(self.learned_tanh_positions), torch.exp(self.learned_log_sigmas))
+        return self.make_filters(torch.tanh(self.learned_positions), torch.exp(self.learned_sigmas))
+
+    def dump_gaussian_parameters(self):
+        pos = torch.tanh(self.learned_positions)
+        sigmas = torch.exp(self.learned_sigmas)
+        return torch_to_numpy(torch.hstack((pos, sigmas.unsqueeze(1))))
 
 def to_size(size):
     return size if isinstance(size, int) else utils.product(size)

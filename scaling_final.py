@@ -15,9 +15,9 @@ train_params = {
     'fields': ['weight_param_count', 'best_accuracy'],
     'test_interval': 1000,
     'max_parameters': 8000, # this skips models that produce more than this number of parameters
-    'shuffle': False, # whether to visit the settings in a random order
-    #'subsample': 1, # this samples N elements from the full set of possibilities, for quick tests
-    'runs': 5
+    'shuffle': True, # whether to visit the settings in a random order
+    # 'subsample': 20, # this samples N elements from the full set of possibilities, for quick tests
+    'runs': 20
 }
 
 train_params_nomax = {**train_params, 'max_parameters': None}
@@ -29,58 +29,48 @@ io_params = {
 }
 
 ###################################################################################################
-## SLP BASELINE                                                                                  ##
+## SLP AND MLP BASELINES                                                                         ##
 ###################################################################################################
 
-def LinearNoBias(ishape, oshape):
-    return nn.Linear(product(ishape), product(oshape), bias=False)
+baseline_params = {
+    **io_params,
+    'bias': TrueOrFalse
+}
 
-records = train_models(LinearNoBias, io_params, **train_params_nomax)
-save_to_csv('csvs/slp_baseline_mnist.csv', records)
+def TwoLayerLinear(ishape, oshape, bias=True):
+    return MultilayerLinear([ishape, 800, oshape], bias=bias, nonlinearity='relu')
 
+records = train_models([Linear, TwoLayerLinear], baseline_params, **train_params_nomax)
+save_to_csv('csvs/baseline_mnist.csv', records)
 
 ###################################################################################################
 ## RANDOM BASIS                                                                                  ##
 ###################################################################################################
 
-def RandomBasisOneLayer(ishape, oshape, ndims:int):
+def RandomBasisOneLayer(ishape, oshape, ndims:int, bias=True):
     return RandomBasisHyperNetwork(Linear(ishape, oshape), ndims=ndims)
 
-rb_1_params = {
-    **io_params,
+def RandomBasisTwoLayer(ishape, oshape, ndims:int, bias=True):
+    return RandomBasisHyperNetwork(TwoLayerLinear(ishape, oshape), ndims=ndims)
+
+rb_params = {
+    **baseline_params,
     'ndims': LogIntegerRange(10, 1000, 20)
 }
 
-#records = train_models(RandomBasisOneLayer, rb_1_params, **train_params)
-#save_to_csv('csvs/scaling_rb_1_mnist.csv', records)
+records = train_models([RandomBasisOneLayer, RandomBasisTwoLayer], rb_params, **train_params)
+save_to_csv('csvs/scaling_rb_mnist.csv', records)
 
 ###################################################################################################
-
-def RandomBasisTwoLayer(ishape, hsize, oshape, nonlinearity:str, ndims:int):
-    net = MultilayerLinear([ishape, hsize, oshape], nonlinearity)
-    return RandomBasisHyperNetwork(net, ndims=ndims)
-
-rb_2_params = {
-    **rb_1_params,
-    'hsize': 100,
-    'nonlinearity': 'tanh'
-}
-
-#records = train_models(RandomBasisTwoLayer, rb_2_params, **train_params)
-#save_to_csv('csvs/scaling_rb_2_mnist.csv', records)
-
-###################################################################################################
-## XOX                                                                                           ##
+## XOX ONE LAYER                                                                                 ##
 ###################################################################################################
 
 def OneLayerXOX(
         genes:int,
         ishape:list, oshape:int,
         is_input_learned:bool, is_input_gaussian:bool, is_readout_learned:bool,
-        labels=0,
-        label_nonlinearity='tanh',
-        non_negative_weights=True,
-        interaction_bias=False
+        labels=0, label_nonlinearity='tanh',
+        non_negative_weights=False, interaction_bias=False
     ):
     interaction = MaybeRelabeledProteinInteraction(genes, labels, nonlinearity=label_nonlinearity, include_bias=interaction_bias)
     input_expression = MaybeLearnedMaybeGaussianExpression[is_input_gaussian][is_input_learned](ishape)
@@ -89,21 +79,18 @@ def OneLayerXOX(
 
 xox_1_params = {
     **io_params,
-    'genes': IntegerRange(1, 30),
+    'genes': IntegerRange(30, 1),
     'is_input_learned': True,
-    'is_input_gaussian': False,
+    'is_input_gaussian': TrueOrFalse,
     'is_readout_learned': False,
-    'interaction_bias': False
+    'interaction_bias': TrueOrFalse
 }
 
-train_params2 = {**train_params, 'max_parameters': None}
-records = train_models(OneLayerXOX, xox_1_params, **train_params2)
-save_to_csv('csvs/scaling_plain_xox_1_mnist.csv', records)
+records = train_models(OneLayerXOX, xox_1_params, **train_params_nomax)
+save_to_csv('csvs/scaling_xox_1_mnist.csv', records)
 
-
-#records = train_models(OneLayerXOX, xox_1_params, **train_params)
-#save_to_csv('csvs/scaling_xox_1_mnist.csv', records)
-
+###################################################################################################
+## XOX TWO LAYER                                                                                 ##
 ###################################################################################################
 
 def TwoLayerXOX(
@@ -125,16 +112,16 @@ def TwoLayerXOX(
 
 xox_2_params = {
     **io_params,
-    'hshape': [10, 10],
+    'hshape': [28, 28],
     'is_expression_shared': True,
     'is_interaction_shared': True,
 
     'genes': IntegerRange(30, 1),
-    'is_input_learned': TrueOrFalse,
-    'is_hidden_learned': TrueOrFalse,
-    'is_readout_learned': TrueOrFalse,
+    'is_input_learned': True,
+    'is_hidden_learned': True,
+    'is_readout_learned': False,
 }
 
-#records = train_models(TwoLayerXOX, xox_2_params, **train_params)
-#save_to_csv('csvs/scaling_xox_2_mnist.csv', records)
+records = train_models(TwoLayerXOX, xox_2_params, **train_params)
+save_to_csv('csvs/scaling_xox_2_mnist.csv', records)
 
