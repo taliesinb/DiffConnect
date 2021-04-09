@@ -19,3 +19,9 @@ def cifar(**kw_args):
 
 def mnist(**kw_args):
     return _generic_iterator_pair(factory=torchvision.datasets.MNIST, **kw_args)
+    
+def fmnist(**kw_args):
+    return _generic_iterator_pair(factory=torchvision.datasets.FashionMNIST, **kw_args)
+    
+def kmnist(**kw_args):
+    return _generic_iterator_pair(factory=torchvision.datasets.KMNIST, **kw_args)
